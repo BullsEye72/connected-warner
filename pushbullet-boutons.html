@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.pushbullet.com; base-uri 'none'; form-action 'none'">
+<title>Boutons d’aide · essai Pushbullet</title>
+<style>
+:root{color-scheme:light dark;--bg:light-dark(#fff,#17191c);--fg:light-dark(#202429,#eceef0);--surface:light-dark(#f2f3f5,#252930);--border:light-dark(#d6dae0,#48505c);--sub:light-dark(#505965,#b8c0cb);--blue:light-dark(#2474d1,#58a2fa);--orange:light-dark(#ba6200,#ffae49);--green:light-dark(#168044,#51cb8c);--red:light-dark(#bd2637,#ff7383)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}main{max-width:900px;margin:auto;padding:24px}h1{font-size:24px;margin:0 0 8px}h2{font-size:20px;margin:0 0 12px}p{margin:8px 0 16px}small,.secondary{color:var(--sub)}.config{margin:24px 0;padding:20px;background:var(--surface);border-radius:16px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.field{display:flex;flex-direction:column;gap:6px}.wide{grid-column:1/-1}input,select,button{font:inherit;color:inherit}input,select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;width:100%;min-height:44px}button{min-height:44px;padding:10px 16px;border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}a{color:var(--blue)}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px}.boxes{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{background:var(--surface);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px}.box button.press{width:100%}.lamp{--led:var(--blue);margin:16px auto;width:120px;height:120px;background:var(--led);border-radius:50%;display:grid;place-items:center;box-shadow:0 0 0 8px color-mix(in srgb,var(--led) 20%,transparent)}.lamp span{width:98px;height:98px;border-radius:50%;background:var(--surface);display:grid;place-items:center;font-weight:600}.status{font-weight:600}.detail{min-height:48px;font-size:14px}.switch{display:flex;align-items:center;gap:10px}.switch input{width:20px;min-height:20px;height:20px}.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;margin:20px 0}.legend span{display:flex;align-items:center;gap:6px}.dot{width:10px;height:10px;display:inline-block;border-radius:50%}.notice{border-top:1px solid var(--border);padding:16px 0}.notice strong{display:block}#messages{overflow-wrap:anywhere}#connection{margin:12px 0 0;overflow-wrap:anywhere}#journal{padding-left:22px;font-size:14px}#journal li{padding:3px 0}hr{border:0;border-top:1px solid var(--border);margin:24px 0}[hidden]{display:none!important}@media(max-width:600px){main{padding:16px}.fields,.boxes{grid-template-columns:1fr}.wide{grid-column:auto}}
+</style>
+</head>
+<body><main>
+<h1>Deux boutons · essai Pushbullet</h1>
+<p class="secondary">Envois réels, marqués « TEST — aucune intervention nécessaire ».</p>
+<section class="config" aria-label="Connexion Pushbullet">
+<div class="fields">
+<label class="field wide">Jeton d’accès Pushbullet<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Coller votre Access Token ici"></label>
+<label class="field">Destinataire<select id="target" disabled><option value="">Vérifier le compte d’abord</option></select></label>
+<label class="field">Relances d’essai<select id="retries"><option value="120">Toutes les 2 min · 5 envois au total</option><option value="0">Désactivées · un envoi</option></select></label>
+<label id="email-field" class="field wide" hidden>Adresse du compte Pushbullet du proche<input id="email" type="email" autocomplete="off" placeholder="Adresse du destinataire"></label>
+</div>
+<div class="actions"><button id="connect" class="primary" type="button">Vérifier le compte</button><button id="disconnect" type="button">Effacer le jeton</button><a href="https://www.pushbullet.com/#settings/account" target="_blank" rel="noopener noreferrer">Obtenir un Access Token</a></div>
+<p id="connection" role="status">Collez le jeton, puis vérifiez le compte. Aucun envoi à cette étape.</p>
+<small>Le jeton reste en mémoire dans cet onglet, sans sauvegarde dans le fichier ni dans le stockage du navigateur.</small>
+</section>
+<div class="boxes">
+<section class="box" data-device="lit"><h2>Lit</h2><div class="lamp" aria-hidden="true"><span>AIDE</span></div><button class="press primary" type="button" disabled>Appuyer · Lit</button><div class="status" aria-live="polite">Configuration nécessaire</div><div class="detail secondary">Connectez Pushbullet pour commencer.</div><label class="switch"><input class="power" type="checkbox" checked>Chargeur USB branché (simulation)</label></section>
+<section class="box" data-device="sdb"><h2>Salle de bains</h2><div class="lamp" aria-hidden="true"><span>AIDE</span></div><button class="press primary" type="button" disabled>Appuyer · Salle de bains</button><div class="status" aria-live="polite">Configuration nécessaire</div><div class="detail secondary">Connectez Pushbullet pour commencer.</div><label class="switch"><input class="power" type="checkbox" checked>Chargeur USB branché (simulation)</label></section>
+</div>
+<div class="legend"><span><i class="dot" style="background:var(--blue)"></i>Prêt</span><span><i class="dot" style="background:var(--orange)"></i>Envoi / attente</span><span><i class="dot" style="background:var(--green)"></i>Confirmation distante reçue</span><span><i class="dot" style="background:var(--red)"></i>Erreur / résultat incertain</span></div>
+<hr><h2>Suivi des essais</h2><p class="secondary">Depuis le téléphone, envoyez simplement « OK » dans Pushbullet pour confirmer toutes les demandes en cours. « ok » et « Ok » fonctionnent aussi. Pour une seule demande, vous pouvez utiliser « OK » suivi de son code. Avec votre propre compte, envoyez une note vers le PC ou tous vos appareils ; avec le compte d’un proche, répondez au compte expéditeur.</p>
+<p id="ack-status" class="secondary" role="status">La vérification des confirmations commence lorsqu’un message est accepté par Pushbullet.</p>
+<div id="messages" aria-live="polite">Aucun essai lancé.</div>
+<hr><details><summary>Journal des essais</summary><ol id="journal"></ol></details>
+<p class="secondary"><small>Gardez cette page ouverte pour recevoir les confirmations. Les boutons physiques et la mémoire après coupure restent à réaliser.</small></p>
+</main>
+<script>
+(() => {
+  'use strict';
+  const $=s=>document.querySelector(s);
+  const token=$('#token'), target=$('#target'), email=$('#email'), retries=$('#retries');
+  const connection=$('#connection'), connect=$('#connect'), messages=$('#messages');
+  let session=null, generation=0, checking=false;
+  let polling={busy:false,next:0,error:''};
+  const calls=new Set(), history=[];
+  const consumedReplies=new Set();
+  const boxes=[...document.querySelectorAll('.box')].map(el=>({el,name:el.dataset.device==='lit'?'Lit':'Salle de bains',power:el.querySelector('.power'),press:el.querySelector('.press'),lamp:el.querySelector('.lamp'),status:el.querySelector('.status'),detail:el.querySelector('.detail'),incident:null}));
+  function log(text){const li=document.createElement('li');li.textContent=new Date().toLocaleTimeString('fr-FR')+' — '+text;$('#journal').prepend(li);while($('#journal').children.length>30)$('#journal').lastElementChild.remove();}
+  function paint(box){
+    const i=box.incident;let state='Prêt',detail='Un appui enverra un message TEST.',color='blue';
+    if(!box.power.checked){state='Hors tension (simulation)';detail='Aucun envoi de ce boîtier tant qu’il est débranché.';color='sub';}
+    else if(!session){state='Configuration nécessaire';detail='Vérifiez votre compte Pushbullet.';color='sub';}
+    else if(i&&!i.ended){
+      color=i.error?'red':'orange';state=i.busy?'Envoi en cours':i.error?'Envoi non confirmé':i.count>=i.max&&i.max>1?'Aucune prise en charge · relances terminées':'Accepté par Pushbullet';
+      detail=i.error||`${i.count} envoi(s) accepté(s). Répondez OK pour tout confirmer, ou OK ${i.code} pour cette demande.`;
+      if(i.next&&!i.busy&&!i.error)detail+=` Relance dans ${Math.max(0,Math.ceil((i.next-Date.now())/1000))} s.`;
+      if(i.count>=i.max&&i.max>1&&!i.error)detail+=' La demande reste en attente de confirmation.';
+    }else if(i?.acknowledged){state='Prise en charge confirmée';detail=`Réponse Pushbullet reçue de ${i.confirmedBy}. Relances arrêtées.`;color='green';}
+    else if(i?.ended){state='Essai terminé sur ce PC';detail='Arrêt local, sans confirmation d’un proche. Un nouvel appui démarre un autre essai.';color='blue';}
+    box.status.textContent=state;box.detail.textContent=detail;box.lamp.style.setProperty('--led',`var(--${color})`);box.press.disabled=!session||!box.power.checked||Boolean(i?.busy);
+  }
+  function render(){
+    messages.replaceChildren();
+    if(!history.length){messages.textContent='Aucun essai lancé.';return;}
+    history.slice(-8).reverse().forEach(i=>{
+      const row=document.createElement('div');row.className='notice';
+      const title=document.createElement('strong');title.textContent=`TEST · ${i.box.name} · ${i.time}`;
+      const info=document.createElement('div');info.className='secondary';info.textContent=`${i.destination.label} · ${i.count} envoi(s) accepté(s)`;
+      const detail=document.createElement('div');detail.textContent=i.acknowledged?`Prise en charge confirmée par ${i.confirmedBy}`:i.ended?'Essai terminé localement, sans confirmation distante':i.busy?'Envoi en cours':i.error||`Dans Pushbullet à ${i.replyTo} : « OK » pour tout confirmer, ou « OK ${i.code} » pour cette demande.`;
+      row.append(title,info,detail);
+      if(!i.ended){
+        const actions=document.createElement('div');actions.className='actions';
+        const done=document.createElement('button');done.type='button';done.textContent='Terminer l’essai sur ce PC';
+        done.addEventListener('click',()=>{i.ended=true;i.next=0;abortIncident(i);log(`${i.box.name} : essai terminé localement.`);paint(i.box);render();});actions.append(done);
+        if(i.error){const resend=document.createElement('button');resend.type='button';resend.textContent='Réessayer l’envoi';resend.disabled=!session||!i.box.power.checked||i.busy;resend.addEventListener('click',()=>send(i));actions.append(resend);}
+        row.append(actions);
+      }messages.append(row);
+    });
+  }
+  function abortIncident(i){for(const c of calls)if(c.incident===i)c.controller.abort();}
+  function invalidate(clear){
+    generation++;session=null;checking=false;
+    polling={busy:false,next:0,error:''};$('#ack-status').textContent='Vérification des confirmations arrêtée.';
+    for(const c of calls)c.controller.abort();
+    history.forEach(i=>{i.ended=true;i.next=0;});
+    if(clear)token.value='';
+    target.disabled=true;target.replaceChildren(new Option('Vérifier le compte d’abord',''));$('#email-field').hidden=true;email.value='';connect.disabled=false;
+    connection.textContent=clear?'Jeton effacé. Les relances ont été arrêtées.':'Jeton modifié. Vérifiez de nouveau le compte.';boxes.forEach(paint);render();
+  }
+  async function api(path,options,key,incident){
+    const controller=new AbortController();const call={controller,incident};calls.add(call);
+    const timer=setTimeout(()=>controller.abort(),15000);
+    try{
+      const response=await fetch('https://api.pushbullet.com/v2/'+path,{method:options.method||'GET',headers:{'Access-Token':key,...(options.body?{'Content-Type':'application/json'}:{})},body:options.body?JSON.stringify(options.body):undefined,signal:controller.signal,credentials:'omit',cache:'no-store',redirect:'error',referrerPolicy:'no-referrer'});
+      if(!response.ok){const errors={401:'Jeton invalide ou révoqué.',403:'Accès refusé par Pushbullet.',400:'Demande refusée : vérifiez le destinataire.',429:'Limite Pushbullet atteinte. Attendez avant de réessayer.'};throw new Error(errors[response.status]||`Pushbullet indisponible (HTTP ${response.status}).`);}
+      const data=await response.json();if(!data||typeof data!=='object')throw new Error('Réponse Pushbullet invalide.');return data;
+    }catch(err){if(err.name==='AbortError'||err instanceof TypeError)throw new Error(incident?'Résultat incertain (réseau ou délai). Le message a peut-être été envoyé ; vérifiez avant de réessayer.':'Connexion impossible. Vérifiez Internet et réessayez.');throw err;}
+    finally{clearTimeout(timer);calls.delete(call);}
+  }
+  connect.addEventListener('click',async()=>{
+    if(checking)return;const key=token.value.trim();if(!key){connection.textContent='Collez votre Access Token avant de vérifier le compte.';return;}
+    invalidate(false);
+    const version=++generation;checking=true;connect.disabled=true;connection.textContent='Vérification du compte…';
+    try{
+      const result=await Promise.all([api('users/me',{},key),api('devices?active=true',{},key)]);
+      if(version!==generation)return;
+      const user=result[0];let devices=result[1].devices;if(!user.iden||!Array.isArray(devices))throw new Error('Réponse du compte invalide.');
+      let cursor=result[1].cursor;
+      while(cursor){const page=await api('devices?active=true&cursor='+encodeURIComponent(cursor),{},key);if(version!==generation)return;if(!Array.isArray(page.devices))throw new Error('Liste des appareils invalide.');devices.push(...page.devices);cursor=page.cursor;}
+      target.replaceChildren(new Option('Tous les appareils de ce compte','all'));
+      devices.filter(d=>d.active&&d.iden&&d.pushable!==false).forEach(d=>target.add(new Option(d.nickname||d.model||'Appareil Pushbullet',d.iden)));
+      target.add(new Option('Un proche · adresse de son compte','email'));target.disabled=false;session={key,version,userId:user.iden,email:user.email||'',name:user.name||user.email||'ce compte'};
+      connection.textContent=`Compte vérifié : ${user.name||user.email||'Pushbullet'}. Choisissez le destinataire, puis appuyez sur un bouton.`;log('Compte vérifié, aucun message envoyé.');
+    }catch(err){if(version===generation){session=null;connection.textContent=err.message;log('Vérification impossible.');}}
+    finally{if(version===generation){checking=false;connect.disabled=false;boxes.forEach(paint);}}
+  });
+  $('#disconnect').addEventListener('click',()=>invalidate(true));token.addEventListener('input',()=>invalidate(false));
+  target.addEventListener('change',()=>{$('#email-field').hidden=target.value!=='email';});
+  function destination(){
+    if(target.value==='email'){if(!email.value.trim()||!email.checkValidity()){email.reportValidity();throw new Error('Saisissez une adresse de destinataire valide.');}return{payload:{email:email.value.trim()},label:email.value.trim()};}
+    return{payload:target.value==='all'?{}:{device_iden:target.value},label:target.selectedOptions[0].textContent};
+  }
+  async function send(i){
+    if(!session||i.ended||i.busy||!i.box.power.checked)return;
+    const active=session;i.busy=true;i.error='';i.next=0;paint(i.box);render();
+    try{
+      const data=await api('pushes',{method:'POST',body:{type:'note',title:`[TEST AIDE] ${i.box.name}`,body:`TEST — aucune intervention nécessaire.\nEssai du bouton : ${i.box.name}.\n${i.time} · référence ${i.id}\nNotification ${i.count+1} sur ${i.max}.\n\nPour confirmer toutes les demandes en cours, envoyez :\nOK\nOu, pour cette demande uniquement :\nOK ${i.code}\nDans Pushbullet, à ${i.replyTo}.`,...i.destination.payload}},active.key,i);
+      if(!data.iden)throw new Error('Réponse sans identifiant : résultat de l’envoi incertain.');
+      // Count a service acceptance even if the local test ended while sending.
+      i.count++;log(`${i.box.name} : envoi ${i.count} accepté par Pushbullet.`);
+      if(Number.isFinite(data.created)){
+        i.since=i.since===null?Math.max(0,data.created-1):Math.min(i.since,Math.max(0,data.created-1));
+        i.createdAt=i.createdAt===null?data.created:Math.min(i.createdAt,data.created);
+      }
+      if(i.since===null)i.error='Message accepté, mais horodatage absent : confirmation distante indisponible.';
+      if(session===active&&!i.ended&&i.interval&&i.count<i.max)i.next=Date.now()+i.interval;
+    }catch(err){if(session===active&&!i.ended){i.error=err.message;log(`${i.box.name} : envoi non confirmé.`);}}
+    finally{i.busy=false;paint(i.box);render();}
+  }
+  function awaiting(){return history.filter(i=>!i.ended&&i.count>0&&i.since!==null&&i.box.power.checked);}
+  function authorizedSender(push,i,active){
+    if(i.destination.payload.email){
+      const expected=i.destination.payload.email.toLowerCase();
+      if(active.email.toLowerCase()===expected)return push.direction==='self'&&push.sender_iden===active.userId;
+      return push.direction==='incoming'&&(push.sender_email_normalized||push.sender_email||'').toLowerCase()===expected;
+    }
+    return push.direction==='self'&&push.sender_iden===active.userId;
+  }
+  function matchingRequests(push,active){
+    if(!push.iden||consumedReplies.has(push.iden)||!push.active||push.type!=='note'||!['self','incoming'].includes(push.direction)||push.receiver_iden!==active.userId||typeof push.body!=='string'||!Number.isFinite(push.created))return [];
+    const text=push.body.trim().toUpperCase();
+    const candidates=history.filter(i=>!i.ended&&i.count>0&&i.createdAt!==null&&push.created>=i.createdAt);
+    // A family member authorized for a current request can take charge of all
+    // current requests in this household, including a temporarily unplugged box.
+    if(text==='OK')return candidates.some(i=>authorizedSender(push,i,active))?candidates:[];
+    return candidates.filter(i=>text===`OK ${i.code}`&&authorizedSender(push,i,active));
+  }
+  async function pollReplies(){
+    const pending=awaiting();if(!session||!pending.length||polling.busy||Date.now()<polling.next)return;
+    const active=session,state=polling;state.busy=true;state.next=Date.now()+5000;
+    const since=Math.min(...pending.map(i=>i.since));
+    try{
+      let cursor=null;const seen=new Set();
+      do{
+        const query=new URLSearchParams({active:'true',limit:'100',modified_after:String(since)});if(cursor)query.set('cursor',cursor);
+        const data=await api('pushes?'+query.toString(),{},active.key);
+        if(session!==active)return;
+        if(!Array.isArray(data.pushes))throw new Error('Réponse de confirmation invalide.');
+        for(const push of data.pushes){
+          const matched=matchingRequests(push,active);
+          if(matched.length)consumedReplies.add(push.iden);
+          for(const i of matched){
+            i.acknowledged=true;i.ended=true;i.next=0;i.error='';i.confirmedBy=push.sender_name||push.sender_email||active.name;
+            abortIncident(i);log(`${i.box.name} : confirmation distante reçue, relances arrêtées.`);paint(i.box);render();
+          }
+        }
+        cursor=data.cursor||null;
+        if(cursor&&seen.has(cursor))throw new Error('Pagination des confirmations invalide.');
+        if(cursor)seen.add(cursor);
+      }while(cursor&&awaiting().length);
+      state.error='';$('#ack-status').textContent=awaiting().length?'Confirmation distante : vérification toutes les 5 secondes.':'Aucune confirmation en attente.';
+    }catch(err){if(session===active){state.error=err.message;state.next=Date.now()+30000;$('#ack-status').textContent='Confirmation distante momentanément indisponible. Nouvel essai dans 30 secondes. Aucun voyant vert sans réponse reçue.';log('Vérification des confirmations momentanément indisponible.');}}
+    finally{state.busy=false;}
+  }
+  boxes.forEach(box=>{
+    box.press.addEventListener('click',()=>{
+      if(!session||!box.power.checked)return;
+      if(box.incident&&!box.incident.ended){log(`${box.name} : essai déjà actif, aucun nouvel envoi.`);return;}
+      let dest;try{dest=destination();}catch(err){connection.textContent=err.message;return;}
+      const interval=Number(retries.value)*1000;
+      let id,code;do{id=crypto.randomUUID();code=id.slice(0,8).toUpperCase();}while(history.some(i=>i.code===code));
+      const replyTo=dest.payload.email&&dest.payload.email.toLowerCase()!==session.email.toLowerCase()?(session.email||session.name):'votre PC ou tous les appareils de ce même compte';
+      const i={box,id,code,replyTo,time:new Date().toLocaleString('fr-FR'),destination:dest,interval,max:interval?5:1,count:0,next:0,since:null,createdAt:null,busy:false,error:'',ended:false,acknowledged:false,confirmedBy:''};
+      box.incident=i;history.push(i);log(`${box.name} : appui enregistré.`);send(i);
+    });
+    box.power.addEventListener('change',()=>{if(!box.power.checked&&box.incident){box.incident.next=0;abortIncident(box.incident);}log(`${box.name} : chargeur ${box.power.checked?'branché':'débranché'} (simulation).`);paint(box);render();});
+  });
+  setInterval(()=>{pollReplies();boxes.forEach(box=>{const i=box.incident;if(i&&i.next&&Date.now()>=i.next&&!i.error&&!i.ended&&i.count<i.max&&!polling.busy)send(i);paint(box);});},500);
+  boxes.forEach(paint);
+})();
+</script>
+</body></html>
