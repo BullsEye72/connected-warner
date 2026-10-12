@@ -1,6 +1,10 @@
 # Prototype des boutons d’aide
 
-La cible matérielle et les évolutions prévues sont décrites dans [SPECIFICATION.md](SPECIFICATION.md) : dashboard et signal de présence toutes les dix minutes, annulation par appui long de dix secondes, mises à jour OTA et vérifications du bouton RGB à anode commune. Ces fonctions supplémentaires ne sont pas encore intégrées au prototype.
+Le panier retenu et le matériel disponible sont recensés dans [MATERIEL.md](MATERIEL.md).
+
+Le [prototype MicroPython Wokwi](wokwi-test/README.md) contient un premier test de bouton et de couleurs validé par l’utilisateur, puis une machine à états avec modes réseau simulé et réel. Le mode réel utilise un jeton temporaire à renseigner dans `configuration.py`, envoie des messages TEST à un destinataire et lit les réponses OK autorisées. Deux interrupteurs à glissière commandent les coupures sur GPIO13 et GPIO14. La commande PWM est centralisée ; le voyant passe au cyan fixe avant les communications et reprend ensuite la couleur de l’état. Cent treize tests locaux passent. Les traces Wokwi de l’utilisateur valident la lecture HTTPS authentifiée, la réutilisation de connexion et la reconnaissance du OK ; son retour après l’ajout du cyan est positif. Les pauses TLS peuvent encore retarder la lecture des boutons et restent à mesurer sur carte.
+
+La cible matérielle et les évolutions prévues sont décrites dans [SPECIFICATION.md](SPECIFICATION.md) : envoi à plusieurs proches avec confirmation globale par le premier `OK`, dashboard et signal de présence toutes les dix minutes, annulation par appui long de dix secondes, mises à jour OTA et vérifications du bouton RGB à anode commune. Ces fonctions supplémentaires ne sont pas encore intégrées au prototype ; il sélectionne actuellement un seul destinataire à la fois.
 
 Ouvrir `pushbullet-boutons.html` par double-clic dans Chrome, Edge ou Firefox. Cette version envoie de véritables notifications Pushbullet. La simulation précédente reste dans `simulation-boutons.html`.
 

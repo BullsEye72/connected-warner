@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "author": "Prototype boutons aide",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-s3-devkitc-1", "id": "esp", "top": 0, "left": 260, "attrs": {} },
+    { "type": "wokwi-rgb-led", "id": "rgb", "top": 50, "left": 30, "attrs": { "common": "cathode" } },
+    { "type": "wokwi-resistor", "id": "rR", "top": 130, "left": 110, "attrs": { "value": "330" } },
+    { "type": "wokwi-resistor", "id": "rG", "top": 180, "left": 110, "attrs": { "value": "330" } },
+    { "type": "wokwi-resistor", "id": "rB", "top": 230, "left": 110, "attrs": { "value": "330" } },
+    { "type": "wokwi-pushbutton", "id": "aide", "top": 40, "left": -50, "attrs": { "color": "red", "label": "AIDE", "key": "a" } },
+    { "type": "wokwi-pushbutton", "id": "validation", "top": 170, "left": 490, "attrs": { "color": "green", "label": "PROCHE : OK / REPOS", "key": "v" } },
+    { "type": "wokwi-slide-switch", "id": "wifi", "top": 290, "left": 490, "attrs": { "value": "1" } },
+    { "type": "wokwi-text", "id": "texteWifi", "top": 250, "left": 470, "attrs": { "text": "Wi-Fi : OFF < > ON" } },
+    { "type": "wokwi-slide-switch", "id": "pushbullet", "top": 410, "left": 490, "attrs": { "value": "1" } },
+    { "type": "wokwi-text", "id": "textePushbullet", "top": 370, "left": 470, "attrs": { "text": "Pushbullet : OFF < > ON" } }
+  ],
+  "connections": [
+    [ "rgb:R", "rR:1", "red", [] ],
+    [ "rR:2", "esp:3", "red", [] ],
+    [ "rgb:G", "rG:1", "green", [] ],
+    [ "rG:2", "esp:8", "green", [] ],
+    [ "rgb:B", "rB:1", "blue", [] ],
+    [ "rB:2", "esp:18", "blue", [] ],
+    [ "rgb:COM", "esp:GND.1", "black", [] ],
+    [ "aide:1.l", "esp:12", "orange", [] ],
+    [ "aide:2.l", "esp:GND.1", "black", [] ],
+    [ "validation:1.l", "esp:40", "green", [] ],
+    [ "validation:2.l", "esp:GND.1", "black", [] ],
+    [ "wifi:2", "esp:13", "blue", [] ],
+    [ "wifi:3", "esp:GND.1", "black", [] ],
+    [ "pushbullet:2", "esp:14", "yellow", [] ],
+    [ "pushbullet:3", "esp:GND.1", "black", [] ]
+  ],
+  "dependencies": {}
+}
