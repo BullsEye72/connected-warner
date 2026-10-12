@@ -566,6 +566,50 @@ class BoucleReseauTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.lire_reponses.await_count, 1)
         self.assertEqual(r.dernier_ok, 6000)
 
+    async def test_lecture_ok_differee_pendant_un_appui(self):
+        r = object.__new__(ReseauReel)
+        r.c = SimpleNamespace(INTERVALLE_LECTURE_MS=5000)
+        r.wifi = r.pushbullet = r.pret = r.horloge_prete = True
+        r.erreur_permanente = False
+        r.wlan = SimpleNamespace(isconnected=lambda: True)
+        r.en_pause = lambda: False
+        r.suivi = SimpleNamespace(date_lecture=lambda: 100)
+        r.dernier_ok = None
+        r.derniere_interaction = 0
+        horloge = [0]
+        lectures = []
+
+        async def lire():
+            lectures.append(horloge[0])
+
+        async def dormir(duree):
+            horloge[0] += 1000
+            if horloge[0] > 2000:
+                raise asyncio.CancelledError
+
+        r.lire_reponses = AsyncMock(side_effect=lire)
+        with patch("pushbullet_reel.maintenant_ms", side_effect=lambda: horloge[0]), \
+                patch("pushbullet_reel.asyncio.sleep", new=AsyncMock(side_effect=dormir)):
+            with self.assertRaises(asyncio.CancelledError):
+                await r.boucle_reseau()
+        self.assertEqual(lectures, [2000])
+
+    def test_retenue_des_lectures_plafonnee_si_bouton_bloque(self):
+        r = object.__new__(ReseauReel)
+        horloge = [0]
+        with patch("pushbullet_reel.maintenant_ms", side_effect=lambda: horloge[0]):
+            self.assertFalse(r.differer_lecture())
+            for t in range(0, 20_000, 500):
+                horloge[0] = t
+                r.noter_interaction()
+                self.assertTrue(r.differer_lecture(), t)
+            horloge[0] = 20_000
+            r.noter_interaction()
+            self.assertFalse(r.differer_lecture())
+            horloge[0] = 20_500
+            r.noter_interaction()
+            self.assertTrue(r.differer_lecture())
+
     async def test_diagnostic_pause_signale_seuil_uniquement(self):
         for pause, nombre_attendu in ((30, 0), (500, 1)):
             r = object.__new__(ReseauReel)

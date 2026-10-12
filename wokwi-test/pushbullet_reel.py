@@ -11,7 +11,9 @@ HOTE_API = "api.pushbullet.com"
 MAX_REPONSE = 96_000
 INACTIVITE_HTTPS_MS = 30_000
 CACHE_DNS_MS = 300_000
-VERSION_TRANSPORT = "MP-HTTPS-20261012-4"
+RETENUE_INTERACTION_MS = 2_000  # Lectures OK differees pendant un appui et juste apres.
+RETENUE_MAX_MS = 20_000  # Plafond : un bouton bloque n'empeche pas de lire les OK.
+VERSION_TRANSPORT = "MP-HTTPS-20261012-5"
 
 
 def maintenant_ms():
@@ -404,6 +406,8 @@ class ReseauReel:
         self.connexion_depuis = None
         self.dernier_controle = None
         self.dernier_ok = None
+        self.derniere_interaction = None
+        self.retenue_depuis = None
         self.verrou = asyncio.Lock()
         self.connexion_https = None
         self.derniere_utilisation_https = None
@@ -632,6 +636,24 @@ class ReseauReel:
             return self.confirmations.pop(0)
         return None
 
+    def noter_interaction(self):
+        self.derniere_interaction = maintenant_ms()
+
+    def differer_lecture(self):
+        """Ne pas figer la boucle sous le doigt : une lecture OK coute une pause
+        TLS. Les envois AIDE/ANNULATION, eux, ne sont jamais differes ici."""
+        maintenant = maintenant_ms()
+        derniere = getattr(self, "derniere_interaction", None)
+        if derniere is None or ecart_ms(maintenant, derniere) >= RETENUE_INTERACTION_MS:
+            self.retenue_depuis = None
+            return False
+        if getattr(self, "retenue_depuis", None) is None:
+            self.retenue_depuis = maintenant
+        if ecart_ms(maintenant, self.retenue_depuis) >= RETENUE_MAX_MS:
+            self.retenue_depuis = None  # Lire maintenant, puis nouvelle retenue possible.
+            return False
+        return True
+
     async def lire_reponses(self):
         date = self.suivi.date_lecture()
         if date is None:
@@ -730,8 +752,9 @@ class ReseauReel:
                         self.suivi.identifier(utilisateur)
                         self.pret = True
                         self.journal("[REEL] Compte Pushbullet verifie ; pret pour AIDE.")
-                    if self.pret and self.suivi.date_lecture() is not None and (
-                            self.dernier_ok is None or ecart_ms(maintenant, self.dernier_ok) >= self.c.INTERVALLE_LECTURE_MS):
+                    if (self.pret and self.suivi.date_lecture() is not None and (
+                            self.dernier_ok is None or ecart_ms(maintenant, self.dernier_ok) >= self.c.INTERVALLE_LECTURE_MS)
+                            and not self.differer_lecture()):
                         try:
                             await self.lire_reponses()
                         finally:

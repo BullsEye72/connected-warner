@@ -318,8 +318,59 @@ class MachineEtatsTests(unittest.TestCase):
             self.assertTrue(bouton.lire(50))
             self.assertFalse(bouton.lire(80))
 
+    class PinIrq:
+        IRQ_FALLING = 2
+        niveau = 1
+        def value(self):
+            return self.niveau
+        def irq(self, trigger, handler):
+            self.handler = handler
+        def front(self):
+            self.handler(self)
+
+    def test_appui_bref_complet_pendant_pause_est_rapporte(self):
+        pin = self.PinIrq()
+        bouton = simulation.Bouton(pin, 0, memoriser=True)
+        with patch.object(simulation, "ecart_ms", lambda a, b: a - b):
+            self.assertFalse(bouton.lire(5))
+            pin.front()  # Appui puis relachement pendant 700 ms de TLS.
+            self.assertTrue(bouton.lire(705))
+            self.assertTrue(bouton.lire(710))
+            self.assertFalse(bouton.lire(735))
+
+    def test_front_hors_pause_reste_soumis_a_l_anti_rebond(self):
+        pin = self.PinIrq()
+        bouton = simulation.Bouton(pin, 0, memoriser=True)
+        with patch.object(simulation, "ecart_ms", lambda a, b: a - b):
+            pin.front()  # Parasite bref : la boucle tournait normalement.
+            self.assertFalse(bouton.lire(5))
+            self.assertFalse(bouton.lire(40))
+
+    def test_rebonds_du_relachement_pendant_pause_ignores(self):
+        pin = self.PinIrq()
+        bouton = simulation.Bouton(pin, 0, memoriser=True)
+        with patch.object(simulation, "ecart_ms", lambda a, b: a - b):
+            pin.niveau = 0
+            bouton.lire(5)
+            self.assertTrue(bouton.lire(40))
+            pin.niveau = 1
+            pin.front()  # Rebond du relachement pendant une pause.
+            self.assertTrue(bouton.lire(700))
+            self.assertFalse(bouton.lire(730))
+            self.assertFalse(bouton.lire(800))
+
 
 class VoyantTests(unittest.TestCase):
+    def test_orange_du_geste_prime_sur_cyan(self):
+        b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
+        b.actualiser(0, True, False)
+        b.actualiser(40, False, False)
+        b.actualiser(100, True, False)
+        b.reseau.en_cours = {"nature": "LECTURE"}
+        self.assertEqual(b.couleur(400), simulation.ORANGE)
+        b.maintien_depuis = None  # Geste relache : le cyan reprend.
+        self.assertEqual(b.couleur(400), simulation.CYAN)
+
     def test_cyan_fixe_pendant_envoi_puis_reprise_du_clignotement(self):
         reseau = simulation.ReseauSimule(lambda message: None, lambda a, b: a - b, latence_ms=100)
         b = simulation.Boitier(lambda message: None, lambda a, b: a - b, reseau)

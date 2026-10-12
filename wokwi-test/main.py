@@ -9,6 +9,7 @@ GPIO_VALIDATION = 40
 GPIO_WIFI_TEST = 13
 GPIO_PUSHBULLET_TEST = 14
 ANTI_REBOND_MS = 30
+PAUSE_BOUCLE_MS = 50  # Ecart entre lectures au-dela duquel un appui bref a pu echapper.
 ANNULATION_MS = 10_000
 INTERVALLE_RELANCE_MS = 5_000  # Essais rapides ; cible : 120_000.
 MAX_ENVOIS = 5  # Premier envoi compris.
@@ -89,6 +90,9 @@ class ReseauSimule:
         if self.en_cours is not None and self.en_cours["nature"] == "AIDE":
             self.journal("[FAUX RESEAU] Requete AIDE interrompue avant acceptation simulee.")
             self.en_cours = None
+
+    def noter_interaction(self):
+        pass  # Aucune lecture de fond a differer dans le faux reseau.
 
     def simuler_ok(self, demande):
         if not self.pushbullet:
@@ -209,6 +213,9 @@ class Boitier:
         # Les interrupteurs imposent un etat, au lieu de basculer a l'appui.
         # None laisse le faux reseau inchange pour les tests sans entree physique.
         self.reseau.configurer(wifi=wifi_disponible, pushbullet=pushbullet_disponible)
+        if aide:
+            # Le transport reel differe ses lectures de fond pendant un geste.
+            self.reseau.noter_interaction()
 
         disponible = self.reseau.disponible()
         if disponible != self.reseau_avant:
@@ -294,10 +301,12 @@ class Boitier:
                     self.envoyer(maintenant)
 
     def couleur(self, maintenant):
+        if self.maintien_depuis is not None:
+            # Orange fixe pendant le geste d'annulation, meme si une requete
+            # demarre : le retour du geste en cours prime sur le cyan.
+            return ORANGE
         if getattr(self.reseau, "communication_en_cours", False):
             return CYAN
-        if self.maintien_depuis is not None:
-            return ORANGE  # Orange fixe pendant le geste d'annulation.
         if not self.reseau.disponible() or self.annulations_a_transmettre:
             return VIOLET if (maintenant // 300) % 2 == 0 else (0, 0, 0)
         if self.etat == ATTENTE and self.envois == 0:
@@ -336,14 +345,36 @@ class VoyantRGB:
 
 
 class Bouton:
-    def __init__(self, pin, maintenant):
+    def __init__(self, pin, maintenant, memoriser=False):
         self.pin = pin
         self.stable = pin.value() == 0
         self.lecture = self.stable
         self.changement = maintenant
+        self.derniere_lecture = maintenant
+        self.appui_memorise = False
+        if memoriser:
+            # TLS peut figer la boucle plusieurs centaines de ms. Le front
+            # descendant est memorise par interruption et traite au reveil ;
+            # sinon un appui bref complet pendant la pause serait perdu.
+            pin.irq(trigger=pin.IRQ_FALLING, handler=self.memoriser_appui)
+
+    def memoriser_appui(self, pin):
+        self.appui_memorise = True
 
     def lire(self, maintenant):
         lecture = self.pin.value() == 0
+        memorise, self.appui_memorise = self.appui_memorise, False
+        pause = ecart_ms(maintenant, self.derniere_lecture) >= PAUSE_BOUCLE_MS
+        self.derniere_lecture = maintenant
+        # Seulement apres une pause : en boucle normale, l'anti-rebond suffit et
+        # filtre les parasites. Bouton deja appuye : fronts de rebond, ignores.
+        if memorise and pause and not self.stable and not lecture:
+            # Appui et relachement pendant la pause : un appui est rapporte,
+            # puis le relachement apres l'anti-rebond habituel.
+            self.stable = True
+            self.lecture = lecture
+            self.changement = maintenant
+            return True
         if lecture != self.lecture:
             self.lecture = lecture
             self.changement = maintenant
@@ -367,7 +398,7 @@ async def boucle_principale():
     voyant = VoyantRGB(leds)
     dernier_diagnostic = time.ticks_ms()
     maintenant = time.ticks_ms()
-    aide = Bouton(Pin(GPIO_AIDE, Pin.IN, Pin.PULL_UP), maintenant)
+    aide = Bouton(Pin(GPIO_AIDE, Pin.IN, Pin.PULL_UP), maintenant, memoriser=True)
     validation = Bouton(Pin(GPIO_VALIDATION, Pin.IN, Pin.PULL_UP), maintenant)
     wifi_test = Bouton(Pin(GPIO_WIFI_TEST, Pin.IN, Pin.PULL_UP), maintenant)
     pushbullet_test = Bouton(Pin(GPIO_PUSHBULLET_TEST, Pin.IN, Pin.PULL_UP), maintenant)
