@@ -244,9 +244,12 @@ class Boitier:
                 # peut deja etre un geste d'annulation.
                 self.annulation_armee = True
                 return  # Un OK simultane ne confirme pas le nouveau cycle.
-            if self.maintien_depuis is not None and self.etat == ATTENTE:
-                # Geste interrompu : reprendre apres un intervalle complet,
-                # sans rattraper les notifications suspendues.
+            if (self.maintien_depuis is not None and self.etat == ATTENTE and self.envois and
+                    self.ecart(maintenant, self.dernier_envoi) >= INTERVALLE_RELANCE_MS):
+                # Relance suspendue par le geste : reprendre apres un intervalle
+                # complet, sans rattrapage. Un appui bref qui n'a rien suspendu
+                # ne decale pas le calendrier : des appuis repetes ne doivent
+                # jamais empecher les relances.
                 self.dernier_envoi = maintenant
             self.maintien_depuis = None
             self.relance_au_relachement = False

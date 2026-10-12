@@ -143,6 +143,14 @@ class MachineEtatsTests(unittest.TestCase):
         self.b.actualiser(18_000, False, False)
         self.assertEqual(self.b.envois, 2)
 
+    def test_appuis_brefs_repetes_ne_retardent_pas_les_relances(self):
+        self.aide()
+        for t in (1_000, 3_000, 4_500):
+            self.aide(t)
+        self.assertEqual(self.b.envois, 1)
+        self.b.actualiser(5_000, False, False)
+        self.assertEqual(self.b.envois, 2)
+
     def test_retour_bleu_dix_minutes_apres_confirmation(self):
         self.aide()
         self.b.actualiser(100, False, True)
