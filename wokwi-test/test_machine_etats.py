@@ -360,6 +360,32 @@ class MachineEtatsTests(unittest.TestCase):
             self.assertFalse(bouton.lire(800))
 
 
+class SurveillanceTests(unittest.TestCase):
+    class Wdt:
+        repas = 0
+        def feed(self):
+            self.repas += 1
+
+    def test_nourri_tant_que_la_tache_reseau_vit(self):
+        wdt = self.Wdt()
+        tache = type("Tache", (), {"fini": False, "done": lambda self: self.fini})()
+        messages = []
+        s = simulation.Surveillance(wdt, tache, messages.append)
+        s.nourrir()
+        s.nourrir()
+        self.assertEqual(wdt.repas, 2)
+        tache.fini = True
+        s.nourrir()
+        s.nourrir()
+        self.assertEqual(wdt.repas, 2)
+        self.assertEqual(len(messages), 1)
+
+    def test_mode_simule_sans_tache_reseau(self):
+        wdt = self.Wdt()
+        simulation.Surveillance(wdt).nourrir()
+        self.assertEqual(wdt.repas, 1)
+
+
 class VoyantTests(unittest.TestCase):
     def test_lecture_de_fond_fige_la_couleur_d_etat_sans_cyan(self):
         b = simulation.Boitier(lambda message: None, lambda a, b: a - b)

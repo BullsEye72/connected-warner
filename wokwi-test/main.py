@@ -19,6 +19,10 @@ VIOLET = (180, 0, 255)
 CYAN = (0, 255, 255)  # Fixe pendant les communications ; reprend l'etat ensuite.
 LATENCE_RESEAU_MS = 750  # Une requete simulee ne bloque pas les boutons.
 INTERVALLE_REESSAI_MS = 2_000  # Apres echec, distinct des relances acceptees.
+# Redemarrage si la boucle des boutons ne tourne plus. Large : DNS et TLS
+# peuvent bloquer plusieurs secondes, et un redemarrage perd la demande en
+# RAM tant qu'il n'y a pas de persistance. 0 desactive (developpement).
+WATCHDOG_MS = 60_000
 
 REPOS = "REPOS"
 ATTENTE = "ATTENTE"
@@ -390,7 +394,27 @@ class Bouton:
         return self.stable
 
 
+class Surveillance:
+    """Nourrit le watchdog depuis la boucle des boutons, seulement si elle
+    tourne ET si la tache reseau vit : sans elle, aucune aide ne part."""
+
+    def __init__(self, wdt, tache_reseau=None, journal=print):
+        self.wdt = wdt
+        self.tache_reseau = tache_reseau
+        self.journal = journal
+        self.arret_signale = False
+
+    def nourrir(self):
+        if self.tache_reseau is not None and self.tache_reseau.done():
+            if not self.arret_signale:
+                self.arret_signale = True
+                self.journal("[DIAGNOSTIC] Tache reseau arretee : redemarrage par watchdog.")
+            return
+        self.wdt.feed()
+
+
 async def boucle_principale():
+    import machine
     from machine import Pin, PWM
     try:
         import asyncio
@@ -435,9 +459,19 @@ async def boucle_principale():
     print("Interrupteurs GPIO13 (Wi-Fi) et GPIO14 (Pushbullet) : gauche OFF, droite ON.")
     print("V : OK fictif en simulation seulement. Violet : transmission en attente ou reseau indisponible.")
     print("Cyan fixe : envoi AIDE/ANNULATION ; lecture de fond : couleur de l'etat sans clignoter.")
+    if machine.reset_cause() == machine.WDT_RESET:
+        print("[DIAGNOSTIC] Redemarrage par watchdog : une demande en RAM a pu etre perdue.")
+    surveillance = None
+    if WATCHDOG_MS:
+        # Irreversible sur ESP32 : apres arret du programme (Ctrl-C), la carte
+        # redemarre au bout de WATCHDOG_MS. Mettre 0 pour deboguer.
+        surveillance = Surveillance(machine.WDT(timeout=WATCHDOG_MS), tache_reseau)
+        print("Watchdog : redemarrage si la boucle est bloquee %d s." % (WATCHDOG_MS // 1000))
 
     try:
         while True:
+            if surveillance is not None:
+                surveillance.nourrir()
             maintenant = time.ticks_ms()
             boitier.actualiser(maintenant, aide.lire(maintenant), validation.lire(maintenant),
                                wifi_test.lire(maintenant), pushbullet_test.lire(maintenant))
