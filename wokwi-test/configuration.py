@@ -7,6 +7,6 @@ PIECE = "Lit"
 SSID = "Wokwi-GUEST"
 MOT_DE_PASSE_WIFI = ""
 INTERVALLE_RELANCE_MS = 120_000  # Cinq envois maximum, premiere tentative immediate.
-INTERVALLE_LECTURE_MS = 5_000
+INTERVALLE_LECTURE_MS = 10_000  # Chaque lecture fige la boucle ; rester sous 30 s (connexion conservee).
 DELAI_HTTP_MS = 12_000
 FICHIER_CA = "ca.pem"

@@ -13,6 +13,8 @@ INACTIVITE_HTTPS_MS = 30_000
 CACHE_DNS_MS = 300_000
 RETENUE_INTERACTION_MS = 2_000  # Lectures OK differees pendant un appui et juste apres.
 RETENUE_MAX_MS = 20_000  # Plafond : un bouton bloque n'empeche pas de lire les OK.
+CONTROLE_MIN_MS = 5_000  # Verification du compte apres erreur : 5, 10, 20, 40 puis 60 s.
+CONTROLE_MAX_MS = 60_000
 VERSION_TRANSPORT = "MP-HTTPS-20261012-5"
 
 
@@ -400,6 +402,8 @@ class ReseauReel:
         self.pause_ms = 0
         self.en_cours = None
         self.communication_en_cours = False
+        self.lecture_de_fond = False
+        self.echecs = 0
         self.resultats = []
         self.confirmations = []
         self.tache_envoi = None
@@ -535,14 +539,17 @@ class ReseauReel:
         if getattr(self.c, "TRACE_HTTPS", True):
             self.journal("[HTTPS] %s %s : %s" % (methode, chemin.split("?", 1)[0], etape))
 
-    async def api(self, methode, chemin, corps=None):
+    async def api(self, methode, chemin, corps=None, fond=False):
+        # Cyan pour les envois voulus par l'utilisateur (AIDE, ANNULATION) ;
+        # une requete de fond fige seulement l'animation sur la couleur d'etat.
+        drapeau = "lecture_de_fond" if fond else "communication_en_cours"
         async with self.verrou:
             if not self.wifi or not self.pushbullet or not self.wlan.isconnected():
                 raise ApiErreur("Transmission suspendue avant requete.")
-            self.communication_en_cours = True
+            setattr(self, drapeau, True)
             try:
                 # La boucle des boutons tourne toutes les 5 ms. Lui laisser
-                # afficher le cyan AVANT DNS/TLS, meme s'ils bloquent ensuite.
+                # poser le voyant AVANT DNS/TLS, meme s'ils bloquent ensuite.
                 await asyncio.sleep(0.02)
                 statut, entetes, donnees = await asyncio.wait_for(
                     self.https(methode, chemin, corps), self.c.DELAI_HTTP_MS / 1000)
@@ -554,7 +561,7 @@ class ReseauReel:
                 raise ApiErreur("Connexion HTTPS indisponible : " + decrire_erreur_transport(
                     erreur, getattr(self, "etape_http", "connexion/lecture")), methode == "POST")
             finally:
-                self.communication_en_cours = False
+                setattr(self, drapeau, False)
         if statut != 200:
             if statut in (400, 401, 403, 404):
                 self.erreur_permanente = True
@@ -638,6 +645,12 @@ class ReseauReel:
 
     def noter_interaction(self):
         self.derniere_interaction = maintenant_ms()
+        # Un appui rend la reprise urgente : pas d'attente d'un long backoff.
+        self.echecs = 0
+
+    def delai_controle(self):
+        echecs = min(getattr(self, "echecs", 0), 4)
+        return min(CONTROLE_MIN_MS << echecs, CONTROLE_MAX_MS)
 
     def differer_lecture(self):
         """Ne pas figer la boucle sous le doigt : une lecture OK coute une pause
@@ -662,7 +675,8 @@ class ReseauReel:
         curseur = None
         deja_vus = set()
         for _ in range(20):
-            donnees = await self.api("GET", chemin + ("&cursor=" + encoder_url(curseur) if curseur else ""))
+            donnees = await self.api("GET", chemin + ("&cursor=" + encoder_url(curseur) if curseur else ""),
+                                     fond=True)
             if not isinstance(donnees.get("pushes"), list):
                 raise ApiErreur("Liste de reponses invalide.")
             candidats = 0
@@ -744,13 +758,15 @@ class ReseauReel:
                         self.journal("[REEL] Horloge reglee ; verification TLS active.")
                         tm = time.gmtime()
                         self.journal("[REEL] Horloge UTC : %04d-%02d-%02d %02d:%02d:%02d" % tm[:6])
-                    if not self.pret and (self.dernier_controle is None or ecart_ms(maintenant, self.dernier_controle) >= 5_000):
+                    if not self.pret and (self.dernier_controle is None or
+                                          ecart_ms(maintenant, self.dernier_controle) >= self.delai_controle()):
                         try:
-                            utilisateur = await self.api("GET", "users/me")
+                            utilisateur = await self.api("GET", "users/me", fond=True)
                         finally:
                             self.dernier_controle = maintenant_ms()
                         self.suivi.identifier(utilisateur)
                         self.pret = True
+                        self.echecs = 0
                         self.journal("[REEL] Compte Pushbullet verifie ; pret pour AIDE.")
                     if (self.pret and self.suivi.date_lecture() is not None and (
                             self.dernier_ok is None or ecart_ms(maintenant, self.dernier_ok) >= self.c.INTERVALLE_LECTURE_MS)
@@ -758,12 +774,15 @@ class ReseauReel:
                         try:
                             await self.lire_reponses()
                         finally:
-                            # Cinq secondes APRES la lecture, meme si elle
-                            # dure plus longtemps que l'intervalle prevu.
+                            # Intervalle compte APRES la lecture, meme si elle
+                            # dure plus longtemps que prevu.
                             self.dernier_ok = maintenant_ms()
             except Exception as erreur:
                 self.pret = False
+                # Backoff : chaque essai coute une pause TLS, meme au REPOS.
+                self.echecs = getattr(self, "echecs", 0) + 1
                 self.journal("[REEL] " + (str(erreur) if isinstance(erreur, ApiErreur) else
-                             "Connexion/lecture indisponible : " + decrire_erreur_transport(erreur)))
+                             "Connexion/lecture indisponible : " + decrire_erreur_transport(erreur)) +
+                             " ; nouvel essai dans %d s." % (self.delai_controle() // 1000))
                 await asyncio.sleep(5)
             await asyncio.sleep(0.1)

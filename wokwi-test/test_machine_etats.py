@@ -361,6 +361,17 @@ class MachineEtatsTests(unittest.TestCase):
 
 
 class VoyantTests(unittest.TestCase):
+    def test_lecture_de_fond_fige_la_couleur_d_etat_sans_cyan(self):
+        b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
+        b.actualiser(0, True, False)
+        b.actualiser(40, False, False)
+        self.assertEqual(b.couleur(500), (0, 0, 0))  # Phase eteinte du clignotement.
+        b.reseau.lecture_de_fond = True
+        self.assertEqual(b.couleur(500), simulation.ORANGE)
+        b.etat = simulation.SANS_CONFIRMATION
+        self.assertEqual(b.couleur(150), (255, 0, 0))
+        b.reseau.wifi = False
+        self.assertEqual(b.couleur(300), simulation.VIOLET)
     def test_orange_du_geste_prime_sur_cyan(self):
         b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
         b.actualiser(0, True, False)

@@ -307,18 +307,25 @@ class Boitier:
             return ORANGE
         if getattr(self.reseau, "communication_en_cours", False):
             return CYAN
+        # Requete de fond : couleur de l'etat sans clignotement, pour qu'une
+        # pause TLS ne fige jamais le voyant dans sa phase eteinte.
+        fixe = getattr(self.reseau, "lecture_de_fond", False)
+
+        def clignoter(couleur, periode):
+            return couleur if fixe or (maintenant // periode) % 2 == 0 else (0, 0, 0)
+
         if not self.reseau.disponible() or self.annulations_a_transmettre:
-            return VIOLET if (maintenant // 300) % 2 == 0 else (0, 0, 0)
+            return clignoter(VIOLET, 300)
         if self.etat == ATTENTE and self.envois == 0:
-            return VIOLET if (maintenant // 300) % 2 == 0 else (0, 0, 0)
+            return clignoter(VIOLET, 300)
         if self.etat == REPOS:
             return (0, 0, 255)
         if self.etat == CONFIRMEE:
             return (0, 255, 0)
         if self.etat == ATTENTE:
-            return ORANGE if (maintenant // 500) % 2 == 0 else (0, 0, 0)
+            return clignoter(ORANGE, 500)
         if self.etat == SANS_CONFIRMATION:
-            return (255 if (maintenant // 150) % 2 == 0 else 0, 0, 0)
+            return clignoter((255, 0, 0), 150)
         return (0, 0, 0)
 
 
@@ -427,7 +434,7 @@ async def boucle_principale():
     print("Apres confirmation ou plafond : appui bref AIDE = nouveau cycle au relachement.")
     print("Interrupteurs GPIO13 (Wi-Fi) et GPIO14 (Pushbullet) : gauche OFF, droite ON.")
     print("V : OK fictif en simulation seulement. Violet : transmission en attente ou reseau indisponible.")
-    print("Cyan fixe : communication en cours ; reprise de la couleur de l'etat ensuite.")
+    print("Cyan fixe : envoi AIDE/ANNULATION ; lecture de fond : couleur de l'etat sans clignoter.")
 
     try:
         while True:

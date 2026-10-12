@@ -380,6 +380,32 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 await r.api("GET", "pushes")
             self.assertFalse(r.communication_en_cours)
 
+    async def test_requete_de_fond_sans_cyan_et_drapeau_efface(self):
+        for erreur in (None, OSError(104)):
+            r = self.transport()
+            del r.api
+            r.c = SimpleNamespace(DELAI_HTTP_MS=1000)
+            r.verrou = asyncio.Lock()
+            r.wifi = r.pushbullet = True
+            r.communication_en_cours = False
+            r.wlan = SimpleNamespace(isconnected=lambda: True)
+            vus = []
+
+            async def https(methode, chemin, corps):
+                vus.append((r.lecture_de_fond, r.communication_en_cours))
+                if erreur:
+                    raise erreur
+                return 200, {}, {}
+
+            r.https = https
+            with patch("pushbullet_reel.asyncio.sleep", new=AsyncMock()):
+                try:
+                    await r.api("GET", "pushes", fond=True)
+                except ApiErreur:
+                    pass
+            self.assertEqual(vus, [(True, False)])
+            self.assertFalse(r.lecture_de_fond)
+
     async def test_pwm_cyan_pose_avant_appel_bloquant_puis_retour_bleu(self):
         import time
         import main as simulation
@@ -593,6 +619,54 @@ class BoucleReseauTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await r.boucle_reseau()
         self.assertEqual(lectures, [2000])
+
+    def test_backoff_du_controle_et_remise_a_zero_par_un_appui(self):
+        r = object.__new__(ReseauReel)
+        delais = []
+        for echecs in range(7):
+            r.echecs = echecs
+            delais.append(r.delai_controle())
+        self.assertEqual(delais, [5_000, 10_000, 20_000, 40_000, 60_000, 60_000, 60_000])
+        with patch("pushbullet_reel.maintenant_ms", return_value=0):
+            r.noter_interaction()
+        self.assertEqual(r.delai_controle(), 5_000)
+
+    async def test_controle_en_echec_espace_les_essais_puis_reussite_reinitialise(self):
+        r = object.__new__(ReseauReel)
+        r.c = SimpleNamespace(INTERVALLE_LECTURE_MS=10_000)
+        r.wifi = r.pushbullet = r.horloge_prete = True
+        r.pret = r.erreur_permanente = False
+        r.wlan = SimpleNamespace(isconnected=lambda: True)
+        r.en_pause = lambda: False
+        r.suivi = SimpleNamespace(date_lecture=lambda: None, identifier=lambda u: None)
+        r.dernier_controle = None
+        messages = []
+        r.journal = messages.append
+        horloge = [0]
+        controles = []
+
+        async def api(methode, chemin, corps=None, fond=False):
+            controles.append((horloge[0], fond))
+            if len(controles) < 3:
+                raise ApiErreur("HTTP 503 : transmission non confirmee.")
+            return {}
+
+        async def dormir(duree):
+            horloge[0] += int(duree * 1000)
+            if horloge[0] > 40_000:
+                raise asyncio.CancelledError
+
+        r.api = api
+        with patch("pushbullet_reel.maintenant_ms", side_effect=lambda: horloge[0]),                 patch("pushbullet_reel.asyncio.sleep", new=AsyncMock(side_effect=dormir)):
+            with self.assertRaises(asyncio.CancelledError):
+                await r.boucle_reseau()
+        # Essais a 0, puis 10 s et 20 s apres chaque essai precedent.
+        self.assertEqual([t // 100 * 100 for t, _ in controles], [0, 10_000, 30_000])
+        self.assertTrue(all(fond for _, fond in controles))
+        self.assertTrue(r.pret)
+        self.assertEqual(r.echecs, 0)
+        self.assertIn("nouvel essai dans 10 s", messages[0])
+        self.assertIn("nouvel essai dans 20 s", messages[1])
 
     def test_retenue_des_lectures_plafonnee_si_bouton_bloque(self):
         r = object.__new__(ReseauReel)
