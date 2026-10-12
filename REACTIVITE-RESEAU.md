@@ -6,6 +6,10 @@ Les traces ultérieures de l’utilisateur en version `MP-HTTPS-20261012-3` conf
 
 La version locale `MP-HTTPS-20261012-4` ajoute, avec `main.py`, un cyan fixe pendant les requêtes HTTPS. La boucle des commandes dispose de vingt millisecondes pour poser le PWM avant les opérations potentiellement bloquantes ; le drapeau est ensuite retiré après succès, erreur ou annulation. Les états et les temporisations restent inchangés. Le rendu Wokwi est à vérifier avec ces deux fichiers, et la réactivité des boutons reste à mesurer : la stabilisation du voyant ne rend pas TLS interruptible. Cinq tests supplémentaires passent, soit 113 au total. Aucun portage C++ n’est décidé.
 
+## Gestes prioritaires (`MP-HTTPS-20261012-5`)
+
+Sans changer d’architecture, le réseau cède la place aux gestes : pas de nouvelle lecture des OK pendant un appui sur AIDE et deux secondes après (retard plafonné à vingt secondes), orange du maintien prioritaire sur le cyan, appui bref mémorisé par interruption s’il survient entièrement pendant une pause. Les lectures des OK passent à dix secondes et la vérification du compte après erreur s’espace jusqu’à soixante secondes : moins de pauses, surtout au REPOS pendant une panne. Ces mesures réduisent les pauses au moment des gestes et évitent la perte d’un appui ; elles ne rendent toujours pas TLS interruptible. Le traitement différé de l’interruption MicroPython après une pause native est déduit des sources du port ESP32, à confirmer dans Wokwi.
+
 ## Constat du 12 octobre 2026
 
 L’aller-retour Pushbullet réel fonctionne dans Wokwi : vérification du compte avec HTTP 200, réponse OK autorisée et passage à CONFIRMEE. Cependant, l’utilisateur observe une longue pause du voyant à la ligne « envoi HTTPS et negociation TLS », y compris après la proposition de réutiliser la connexion. La correction ne peut donc pas être considérée comme suffisante.
