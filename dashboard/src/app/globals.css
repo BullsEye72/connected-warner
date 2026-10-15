@@ -6,6 +6,81 @@
   --green:#375f48;
   --amber:#986420;
 }
+
+.auth-page {
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:38px;
+  padding:48px 20px;
+}
+.auth-brand { margin-bottom:4px; }
+.auth-card {
+  width:100%;
+  max-width:460px;
+  padding:38px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:14px;
+  box-shadow:0 12px 45px #23372f05;
+}
+.auth-card h1 { font-size:36px; margin:18px 0; }
+.auth-intro { font-size:14px; line-height:1.85; color:#697565; margin:0 0 28px; }
+.auth-note { font-size:12px; line-height:1.85; color:#74806c; margin:21px 0 26px; }
+.auth-footer { font-size:11px; color:#7d8874; }
+.primary-button,.google-button {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:13px;
+  min-height:46px;
+  width:100%;
+  padding:12px 18px;
+  border:1px solid #254b3b;
+  border-radius:7px;
+  background:#254b3b;
+  color:#fff;
+  font:600 13px Arial,Helvetica,sans-serif;
+  cursor:pointer;
+}
+.google-button { background:#fff; color:#26372d; border-color:#cbd3c5; }
+.google-letter { font-size:21px; font-weight:700; color:#4285f4; }
+.primary-button:hover { background:#34664e; }
+.google-button:hover { background:#f5f7f0; }
+button:disabled { opacity:.65; cursor:wait; }
+button:focus-visible,input:focus-visible { outline:3px solid #7b9751; outline-offset:3px; }
+.text-link { display:inline-block; color:#48673a; font-size:12px; line-height:1.8; }
+.text-link:hover { text-decoration:underline; }
+.form-notice { padding:16px; border:1px solid #dfe5d1; border-radius:7px; background:#edf1e4; font-size:13px; line-height:1.85; margin:0 0 24px; }
+.form-error { color:#944034; font-size:13px; line-height:1.8; }
+.registration-form { display:grid; gap:10px; max-width:400px; padding-bottom:8px; }
+.registration-form label { font-size:12px; color:#53644b; margin-top:6px; }
+.registration-form input { min-width:0; width:100%; border:1px solid #cbd3c5; border-radius:6px; background:#fff; padding:12px; font:14px Arial,Helvetica,sans-serif; color:var(--ink); }
+.registration-form .primary-button { margin-top:10px; }
+.optional { color:#7e8976; font-size:11px; }
+.onboarding-signout { margin-top:24px; }
+.quiet-button { padding:6px 0; border:0; background:none; color:#536e43; font:12px Arial,Helvetica,sans-serif; cursor:pointer; }
+.quiet-button:hover { text-decoration:underline; }
+.account { display:flex; align-items:center; gap:20px; min-width:0; }
+.account>span { max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.neutral { background:#f0f1ed; color:#747b6e; }
+.device-id { font-family:monospace; font-size:10px; overflow-wrap:anywhere; text-align:right; }
+.empty-state { padding:28px; border:1px dashed #cbd3c5; border-radius:10px; background:#fafbf6; }
+.empty-state h3 { margin:0 0 12px; font-size:20px; font-weight:500; }
+.empty-state p,.add-device>p { font-size:13px; color:#74806c; line-height:1.8; }
+details.add-device { margin:24px 0 0; padding:0 22px; background:#fafbf6; border:1px solid var(--border); border-radius:8px; }
+.add-device summary { font-size:13px; }
+.add-device .registration-form { padding-bottom:22px; }
+@media(max-width:760px) {
+  .auth-page { padding:35px 20px; gap:26px; }
+  .auth-card { padding:26px; }
+  .auth-card h1 { font-size:30px; }
+  .account { gap:10px; }
+  .account>span { display:none; }
+  .account .quiet-button { font-size:10px; }
+}
 * {
   box-sizing:border-box;
 }

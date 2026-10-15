@@ -1,9 +1,11 @@
 # Prototype des boutons d’aide
 
-Le [dashboard web](dashboard/README.md) dispose d'une première base Next.js
-déployable sur Vercel avec `dashboard` comme **Root Directory**. Il affiche
-uniquement des données fictives ; l'authentification, la base persistante et
-la réception des présences restent à raccorder.
+Le [dashboard web](dashboard/README.md) est une application Next.js déployable
+sur Vercel avec `dashboard` comme **Root Directory**. L'accès privé utilise
+Google via Supabase ; les logements et boîtiers sont isolés par compte dans
+PostgreSQL. La [configuration Supabase et Google](dashboard/README.md) et la
+migration SQL sont nécessaires. L'aperçu fictif reste accessible sur `/demo` ;
+la collecte des présences des cartes reste à raccorder.
 
 Le panier retenu et le matériel disponible sont recensés dans [MATERIEL.md](MATERIEL.md).
 

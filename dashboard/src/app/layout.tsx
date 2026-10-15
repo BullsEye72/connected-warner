@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Connected Warner · Tableau de bord",
-  description: "Suivi des boîtiers d’aide Connected Warner — aperçu de démonstration.",
+  description: "Espace privé de suivi des boîtiers d’aide Connected Warner.",
   robots: { index: false, follow: false },
 };
 
