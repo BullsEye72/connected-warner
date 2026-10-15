@@ -8,7 +8,7 @@ import struct
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from pushbullet_reel import (ApiErreur, ReseauReel, SuiviPushbullet, INACTIVITE_HTTPS_MS,
+from pushbullet_reel import (ApiErreur, LectureDifferee, ReseauReel, SuiviPushbullet, INACTIVITE_HTTPS_MS,
                              charger_certificats, decrire_erreur_transport,
                              decoder_json_serveur, horodatage_ms,
                              lire_reponse_http, valider_configuration)
@@ -682,7 +682,9 @@ class BoucleReseauTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(r.differer_lecture())
             horloge[0] = 20_500
             r.noter_interaction()
-            self.assertTrue(r.differer_lecture())
+            # L'autorisation reste disponible pour les gardes suivantes ;
+            # seul le depart effectif d'une requete la consomme.
+            self.assertFalse(r.differer_lecture())
 
     async def test_diagnostic_pause_signale_seuil_uniquement(self):
         for pause, nombre_attendu in ((30, 0), (500, 1)):
@@ -709,6 +711,209 @@ class BoucleReseauTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await r.boucle()
         r.fermer_https.assert_awaited_once()
+
+
+class BudgetHttpsTests(unittest.IsolatedAsyncioTestCase):
+    def transport(self):
+        r = object.__new__(ReseauReel)
+        r.c = SimpleNamespace(DELAI_HTTP_MS=12_000, TRACE_HTTPS=False)
+        r.verrou = asyncio.Lock()
+        r.wifi = r.pushbullet = True
+        r.wlan = SimpleNamespace(isconnected=lambda: True)
+        r.journal = lambda message: None
+        r.https = AsyncMock(side_effect=asyncio.TimeoutError)
+        return r
+
+    def test_budget_long_seulement_si_connexion_a_creer(self):
+        r = self.transport()
+        with patch("pushbullet_reel.maintenant_ms", return_value=31_000):
+            self.assertEqual(r.delai_https_ms(), 30_000)
+            r.connexion_https = (None, None)
+            r.derniere_utilisation_https = 30_000
+            self.assertEqual(r.delai_https_ms(), 12_000)
+            r.connexion_perimee = True
+            self.assertEqual(r.delai_https_ms(), 30_000)
+            r.connexion_perimee = False
+            r.derniere_utilisation_https = 1000
+            self.assertEqual(r.delai_https_ms(), 30_000)
+
+    def test_budget_connexion_configurable_sans_reduire_budget_http(self):
+        r = self.transport()
+        r.c.DELAI_CONNEXION_MS = 20_000
+        self.assertEqual(r.delai_https_ms(), 20_000)
+        r.c.DELAI_CONNEXION_MS = 5000
+        self.assertEqual(r.delai_https_ms(), 12_000)
+
+    async def test_delai_applique_et_diagnostic_avec_incertitude_post(self):
+        for reutilisee, attendu in ((False, 30), (True, 12)):
+            for methode in ("GET", "POST"):
+                r = self.transport()
+                if reutilisee:
+                    r.connexion_https = (None, None)
+                vrai_wait_for = asyncio.wait_for
+                with patch("pushbullet_reel.asyncio.wait_for", new=AsyncMock(wraps=vrai_wait_for)) as attendre:
+                    with self.assertRaises(ApiErreur) as resultat:
+                        await r.api(methode, "users/me")
+                self.assertEqual(attendre.await_args.args[1], attendu)
+                self.assertIn("%d ms" % (attendu * 1000), str(resultat.exception))
+                self.assertEqual(resultat.exception.incertain, methode == "POST")
+                self.assertFalse(r.communication_en_cours)
+
+
+class PrioriteLectureTests(unittest.IsolatedAsyncioTestCase):
+    def transport(self):
+        r = object.__new__(ReseauReel)
+        r.c = SimpleNamespace(DELAI_HTTP_MS=1000, INTERVALLE_LECTURE_MS=10_000)
+        r.verrou = asyncio.Lock()
+        r.wifi = r.pushbullet = r.pret = r.horloge_prete = True
+        r.wlan = SimpleNamespace(isconnected=lambda: True)
+        r.erreur_permanente = False
+        r.communication_en_cours = r.lecture_de_fond = False
+        r.derniere_interaction = r.retenue_depuis = None
+        r.dernier_ok = r.dernier_controle = None
+        r.echecs = 0
+        r.en_pause = lambda: False
+        r.journal = lambda message: None
+        r.confirmations = []
+        r.https = AsyncMock(return_value=(200, {}, {"pushes": []}))
+        r.suivi = SuiviPushbullet("proche@example.com", "Lit", "PRIORITE")
+        r.suivi.identifier({"iden": "expediteur", "email": "boitier@example.com"})
+        r.suivi.ouvrir(1)
+        r.suivi.accepte(1, {"iden": "aide", "created": "1791793350.56789"})
+        return r
+
+    async def test_appui_pendant_preparation_empeche_https(self):
+        r = self.transport()
+
+        async def preparation(duree):
+            r.noter_interaction()
+
+        with patch("pushbullet_reel.maintenant_ms", return_value=100), \
+                patch("pushbullet_reel.asyncio.sleep", new=AsyncMock(side_effect=preparation)):
+            with self.assertRaises(LectureDifferee):
+                await r.api("GET", "pushes", fond=True)
+        r.https.assert_not_awaited()
+        self.assertFalse(r.lecture_de_fond)
+        self.assertFalse(r.verrou.locked())
+        self.assertTrue(r.pret)
+
+    async def test_appui_pendant_attente_verrou_empeche_https(self):
+        r = self.transport()
+        await r.verrou.acquire()
+        with patch("pushbullet_reel.maintenant_ms", return_value=100):
+            tache = asyncio.create_task(r.api("GET", "pushes", fond=True))
+            await asyncio.sleep(0)
+            r.noter_interaction()
+            r.verrou.release()
+            with self.assertRaises(LectureDifferee):
+                await tache
+        r.https.assert_not_awaited()
+        self.assertFalse(r.verrou.locked())
+
+    async def test_geste_entre_pages_reporte_la_suite_sans_perdre_curseur(self):
+        r = self.transport()
+        horloge = [100]
+        chemins = []
+
+        async def https(methode, chemin, corps):
+            chemins.append(chemin)
+            if len(chemins) == 1:
+                r.noter_interaction()
+                return 200, {}, {"pushes": [], "cursor": "page2"}
+            return 200, {}, {"pushes": []}
+
+        async def dormir(duree):
+            if duree == 0.1:
+                self.assertEqual(len(chemins), 1)
+                self.assertFalse(r.verrou.locked())
+                horloge[0] = 3000
+
+        r.https = https
+        with patch("pushbullet_reel.maintenant_ms", side_effect=lambda: horloge[0]), \
+                patch("pushbullet_reel.asyncio.sleep", new=AsyncMock(side_effect=dormir)):
+            await r.lire_reponses()
+        self.assertEqual(len(chemins), 2)
+        self.assertNotIn("cursor", chemins[0])
+        self.assertIn("cursor=page2", chemins[1])
+        self.assertTrue(r.pret)
+        self.assertEqual(r.echecs, 0)
+
+    async def test_plafond_vingt_secondes_survit_aux_gardes_successives(self):
+        r = self.transport()
+        r.derniere_interaction = 20_000
+        r.retenue_depuis = 0
+
+        async def dormir(duree):
+            r.noter_interaction()  # Le bouton est toujours maintenu.
+
+        with patch("pushbullet_reel.maintenant_ms", return_value=20_000), \
+                patch("pushbullet_reel.asyncio.sleep", new=AsyncMock(side_effect=dormir)):
+            self.assertFalse(r.differer_lecture())
+            await r.api("GET", "pushes", fond=True)
+            self.assertIsNone(r.retenue_depuis)
+            self.assertTrue(r.differer_lecture())
+        r.https.assert_awaited_once()
+
+    async def test_envois_aide_annulation_non_reportes_par_geste(self):
+        for nature in ("AIDE", "ANNULATION"):
+            r = self.transport()
+            r.differer_lecture = lambda: True
+            await r.api("POST", "pushes", {"nature": nature})
+            r.https.assert_awaited_once()
+            self.assertFalse(r.communication_en_cours)
+
+    async def test_report_ok_ne_change_pas_pret_backoff_ni_calendrier(self):
+        r = self.transport()
+        r.echecs = 3
+        r.lire_reponses = AsyncMock(side_effect=[LectureDifferee(), None])
+        horloge = [0]
+        pauses = [0]
+
+        async def dormir(duree):
+            pauses[0] += 1
+            if pauses[0] == 1:
+                self.assertTrue(r.pret)
+                self.assertEqual(r.echecs, 3)
+                self.assertIsNone(r.dernier_ok)
+                horloge[0] = 100
+            else:
+                raise asyncio.CancelledError
+
+        with patch("pushbullet_reel.maintenant_ms", side_effect=lambda: horloge[0]), \
+                patch("pushbullet_reel.asyncio.sleep", new=AsyncMock(side_effect=dormir)):
+            with self.assertRaises(asyncio.CancelledError):
+                await r.boucle_reseau()
+        self.assertEqual(r.lire_reponses.await_count, 2)
+        self.assertEqual(r.dernier_ok, 100)
+
+    async def test_cycle_annule_abandonne_pagination_sans_panne(self):
+        r = self.transport()
+
+        async def https(methode, chemin, corps):
+            r.suivi.fermer(1)
+            return 200, {}, {"pushes": [], "cursor": "page2"}
+
+        r.https = AsyncMock(side_effect=https)
+        with self.assertRaises(LectureDifferee):
+            await r.lire_reponses()
+        r.https.assert_awaited_once()
+        self.assertTrue(r.pret)
+
+    async def test_report_controle_compte_ne_declenche_pas_backoff(self):
+        r = self.transport()
+        r.pret = False
+        r.echecs = 3
+        r.api = AsyncMock(side_effect=LectureDifferee())
+
+        async def dormir(duree):
+            self.assertIsNone(r.dernier_controle)
+            self.assertEqual(r.echecs, 3)
+            raise asyncio.CancelledError
+
+        with patch("pushbullet_reel.asyncio.sleep", new=AsyncMock(side_effect=dormir)):
+            with self.assertRaises(asyncio.CancelledError):
+                await r.boucle_reseau()
+        r.api.assert_awaited_once()
 
 
 class DiagnosticTests(unittest.TestCase):
@@ -741,6 +946,19 @@ class CertificatsTests(unittest.TestCase):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_budget_connexion_optionnel_et_borne(self):
+        c = SimpleNamespace(JETON_PUSHBULLET="test", DESTINATAIRE_EMAIL="proche@example.com",
+                            INTERVALLE_RELANCE_MS=120_000, INTERVALLE_LECTURE_MS=10_000,
+                            DELAI_HTTP_MS=12_000)
+        valider_configuration(c)
+        for valeur in (3000, 30_000):
+            c.DELAI_CONNEXION_MS = valeur
+            valider_configuration(c)
+        for valeur in (0, 30_001):
+            c.DELAI_CONNEXION_MS = valeur
+            with self.assertRaisesRegex(ValueError, "DELAI_CONNEXION_MS"):
+                valider_configuration(c)
+
     def test_jeton_vide_refuse_sans_message_reel(self):
         with self.assertRaisesRegex(ValueError, "JETON_PUSHBULLET"):
             valider_configuration(SimpleNamespace(JETON_PUSHBULLET=""))

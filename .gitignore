@@ -1,0 +1,22 @@
+/.deploy/
+/carte/configuration_privee.py
+/debug.log
+wifi.json
+wifi_installation.json
+wifi.json.tmp
+wifi_installation.json.tmp
+__pycache__/
+*.pyc
+diagnostic.jsonl
+diagnostic.jsonl.1
+/logs/diagnostic-*/
+/logs/*.pcap
+
+# Dashboard et outils locaux
+node_modules/
+.next/
+.vercel/
+.env*
+!.env.example
+*.tsbuildinfo
+/.npm-cache/

@@ -338,6 +338,38 @@ class MachineEtatsTests(unittest.TestCase):
             self.assertTrue(bouton.lire(710))
             self.assertFalse(bouton.lire(735))
 
+    def test_geste_initial_ignore_puis_nouvel_appui_declenche_aide(self):
+        pin = self.PinIrq()
+        pin.niveau = 0
+        bouton = simulation.Bouton(pin, 0, memoriser=True, ignorer_appui_initial=True)
+        with patch.object(simulation, "ecart_ms", lambda a, b: a - b):
+            for t in (40, 10_000, 300_000):
+                pin.front()
+                self.b.actualiser(t, bouton.lire(t), False)
+                self.assertEqual(self.b.etat, simulation.REPOS)
+                self.assertEqual(self.b.envois, 0)
+            pin.niveau = 1
+            self.assertFalse(bouton.lire(300_010))
+            pin.niveau = 0  # Rebond : ne pas armer le bouton.
+            self.assertFalse(bouton.lire(300_020))
+            pin.niveau = 1
+            self.assertFalse(bouton.lire(300_030))
+            self.assertFalse(bouton.lire(300_060))
+            pin.niveau = 0
+            pin.front()
+            self.assertFalse(bouton.lire(300_070))
+            self.b.actualiser(300_100, bouton.lire(300_100), False)
+            self.assertEqual(self.b.etat, simulation.ATTENTE)
+            self.assertEqual(self.b.envois, 1)
+
+    def test_bouton_relache_au_demarrage_accepte_le_premier_appui(self):
+        pin = self.PinIrq()
+        bouton = simulation.Bouton(pin, 0, ignorer_appui_initial=True)
+        with patch.object(simulation, "ecart_ms", lambda a, b: a - b):
+            pin.niveau = 0
+            self.assertFalse(bouton.lire(10))
+            self.assertTrue(bouton.lire(40))
+
     def test_front_hors_pause_reste_soumis_a_l_anti_rebond(self):
         pin = self.PinIrq()
         bouton = simulation.Bouton(pin, 0, memoriser=True)
@@ -387,6 +419,152 @@ class SurveillanceTests(unittest.TestCase):
 
 
 class VoyantTests(unittest.TestCase):
+    def test_respiration_bleue_dix_secondes_et_verte_quatre_secondes_sans_extinction(self):
+        b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
+        voyant = simulation.VoyantRGB((), respiration=True)
+        with patch.object(simulation, "ecart_ms", lambda a, b: a - b):
+            for t, niveau in ((0, 64), (2500, 38), (5000, 12), (7500, 38), (10_000, 64)):
+                voyant.afficher_etat(b, t)
+                self.assertEqual(voyant.derniere_couleur, (0, 0, niveau))
+            b.etat = simulation.CONFIRMEE
+            for t, niveau in ((10_000, 96), (11_000, 58), (12_000, 19), (13_000, 58), (14_000, 96)):
+                voyant.afficher_etat(b, t)
+                self.assertEqual(voyant.derniere_couleur, (0, niveau, 0))
+
+    def test_respiration_ne_masque_pas_les_priorites_et_gele_pendant_lecture(self):
+        b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
+        voyant = simulation.VoyantRGB((), respiration=True)
+        with patch.object(simulation, "ecart_ms", lambda a, b: a - b):
+            voyant.afficher_etat(b, 0)
+            voyant.afficher_etat(b, 2500)
+            avant = voyant.derniere_couleur
+            b.reseau.lecture_de_fond = True
+            voyant.afficher_etat(b, 7000)
+            self.assertEqual(voyant.derniere_couleur, avant)
+            b.reseau.lecture_de_fond = False
+            voyant.afficher_etat(b, 7000)
+            self.assertEqual(voyant.derniere_couleur, avant)
+            b.reseau.wifi = False
+            voyant.afficher_etat(b, 7200)
+            self.assertEqual(voyant.derniere_couleur, simulation.VIOLET)
+            b.reseau.wifi = True
+            b.reseau.en_cours = {"nature": "AIDE"}
+            voyant.afficher_etat(b, 7300)
+            self.assertEqual(voyant.derniere_couleur, simulation.CYAN)
+            b.maintien_depuis = 7300
+            voyant.afficher_etat(b, 7400)
+            self.assertEqual(voyant.derniere_couleur, simulation.ORANGE)
+
+    def test_respiration_ne_modifie_pas_orange_rouge_ni_duree_confirmation(self):
+        b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
+        voyant = simulation.VoyantRGB((), respiration=True)
+        for etat, couleur in ((simulation.ATTENTE, simulation.ORANGE), (simulation.SANS_CONFIRMATION, (255, 0, 0))):
+            b.etat, b.envois = etat, 1
+            voyant.afficher_etat(b, 0)
+            self.assertEqual(voyant.derniere_couleur, couleur)
+        b.etat = simulation.CONFIRMEE
+        b.confirmee_depuis = 0
+        with patch.object(simulation, "ecart_ms", lambda a, b: a - b):
+            b.actualiser(simulation.RETOUR_REPOS_MS, False, False)
+            voyant.afficher_etat(b, simulation.RETOUR_REPOS_MS)
+            self.assertEqual(b.etat, simulation.REPOS)
+            self.assertEqual(voyant.derniere_couleur, (0, 0, 64))
+
+    def test_respiration_faible_intensite_reste_visible_et_extinction_explicite_possible(self):
+        from unittest.mock import MagicMock
+        pixel = MagicMock()
+        voyant = simulation.VoyantRGB((), pixel, luminosite_carte=1, respiration=True, intensite_bleu=1)
+        b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
+        voyant.afficher_etat(b, 0)
+        pixel.__setitem__.assert_called_with(0, (0, 0, 1))
+        voyant.eteindre()
+        pixel.__setitem__.assert_called_with(0, (0, 0, 0))
+        for parametre, valeur in (("periode_bleu_ms", 0), ("periode_vert_ms", 999), ("intensite_bleu", 0), ("intensite_vert", 256)):
+            with self.assertRaises(ValueError):
+                simulation.VoyantRGB((), **{parametre: valeur})
+
+    def test_pixel_et_pwm_suivent_le_meme_cycle_et_s_eteignent_ensemble(self):
+        class Sortie:
+            def __init__(self):
+                self.valeur = None
+                self.fermee = False
+            def duty_u16(self, valeur):
+                self.valeur = valeur
+            def deinit(self):
+                self.fermee = True
+
+        class Pixel:
+            def __init__(self):
+                self.couleur = None
+                self.ecritures = []
+            def __setitem__(self, indice, couleur):
+                self.couleur = couleur
+            def write(self):
+                self.ecritures.append(self.couleur)
+
+        sorties = [Sortie(), Sortie(), Sortie()]
+        pixel = Pixel()
+        voyant = simulation.VoyantRGB(sorties, pixel, luminosite_carte=32)
+        b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
+        for etat, date, attendue in (
+            (simulation.REPOS, 0, (0, 0, 32)),
+            (simulation.ATTENTE, 0, (32, 10, 0)),
+            (simulation.ATTENTE, 500, (0, 0, 0)),
+            (simulation.SANS_CONFIRMATION, 0, (32, 0, 0)),
+            (simulation.CONFIRMEE, 0, (0, 32, 0)),
+        ):
+            b.etat = etat
+            b.envois = 1
+            voyant.afficher_etat(b, date)
+            self.assertEqual(pixel.ecritures[-1], attendue)
+            self.assertEqual([s.valeur for s in sorties], [v * 257 for v in b.couleur(date)])
+        voyant.eteindre()
+        self.assertEqual(pixel.ecritures[-1], (0, 0, 0))
+        self.assertTrue(all(s.fermee for s in sorties))
+
+    def test_pixel_seul_et_couleur_inchangee_sans_recriture(self):
+        class Pixel:
+            def __setitem__(self, indice, couleur):
+                self.couleur = couleur
+            def write(self):
+                self.ecritures = getattr(self, "ecritures", 0) + 1
+
+        pixel = Pixel()
+        voyant = simulation.VoyantRGB((), pixel)
+        for _ in range(100):
+            voyant.afficher((0, 0, 255))
+        self.assertEqual(pixel.couleur, (0, 0, 32))
+        self.assertEqual(pixel.ecritures, 1)
+        voyant.eteindre()
+        self.assertEqual(pixel.couleur, (0, 0, 0))
+
+    def test_luminosite_pixel_zero_ou_max_sans_modifier_couleur_etat(self):
+        class Pixel:
+            def __setitem__(self, indice, couleur):
+                self.couleur = couleur
+            def write(self):
+                pass
+
+        for luminosite, attendue in ((0, (0, 0, 0)), (255, simulation.ORANGE)):
+            pixel = Pixel()
+            voyant = simulation.VoyantRGB((), pixel, luminosite)
+            voyant.afficher(simulation.ORANGE)
+            self.assertEqual(pixel.couleur, attendue)
+            self.assertEqual(voyant.derniere_couleur, simulation.ORANGE)
+        for invalide in (-1, 256, 1.5, "32"):
+            with self.assertRaises(ValueError):
+                simulation.VoyantRGB((), luminosite_carte=invalide)
+
+    def test_profil_sans_voyant_externe_n_ouvre_aucune_sortie_pwm(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        pin, pwm = Mock(), Mock()
+        voyant = simulation.creer_voyant(SimpleNamespace(VOYANT_BOUTON_ACTIF=False), pin, pwm)
+        pin.assert_not_called()
+        pwm.assert_not_called()
+        self.assertEqual(voyant.sorties, ())
+
     def test_lecture_de_fond_fige_la_couleur_d_etat_sans_cyan(self):
         b = simulation.Boitier(lambda message: None, lambda a, b: a - b)
         b.actualiser(0, True, False)

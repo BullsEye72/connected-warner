@@ -2,6 +2,8 @@
 import json
 import time
 import sys
+import journal as diagnostic
+from contacts import contacts_configuration
 try:
     import asyncio
 except ImportError:
@@ -15,7 +17,8 @@ RETENUE_INTERACTION_MS = 2_000  # Lectures OK differees pendant un appui et just
 RETENUE_MAX_MS = 20_000  # Plafond : un bouton bloque n'empeche pas de lire les OK.
 CONTROLE_MIN_MS = 5_000  # Verification du compte apres erreur : 5, 10, 20, 40 puis 60 s.
 CONTROLE_MAX_MS = 60_000
-VERSION_TRANSPORT = "MP-HTTPS-20261012-5"
+DELAI_CONNEXION_PAR_DEFAUT_MS = 30_000
+VERSION_TRANSPORT = "MP-HTTPS-20261016-JOURNAL"
 
 
 def maintenant_ms():
@@ -33,13 +36,14 @@ def valider_configuration(c):
         raise ValueError("Renseigner JETON_PUSHBULLET dans configuration.py.")
     if any(ord(x) < 33 or ord(x) > 126 for x in c.JETON_PUSHBULLET):
         raise ValueError("Jeton invalide : retirer les espaces et retours a la ligne.")
-    adresse = c.DESTINATAIRE_EMAIL.strip()
-    if "@" not in adresse or any(x.isspace() for x in adresse):
-        raise ValueError("Renseigner DESTINATAIRE_EMAIL dans configuration.py.")
+    if not contacts_configuration(c):
+        raise ValueError("Renseigner DESTINATAIRES dans configuration.py ou le portail.")
     if c.INTERVALLE_RELANCE_MS < 10_000 or c.INTERVALLE_LECTURE_MS < 5_000:
         raise ValueError("Relances : minimum 10 s ; lecture des OK : minimum 5 s.")
     if not 3_000 <= c.DELAI_HTTP_MS <= 30_000:
         raise ValueError("DELAI_HTTP_MS doit etre compris entre 3000 et 30000.")
+    if not 3_000 <= getattr(c, "DELAI_CONNEXION_MS", DELAI_CONNEXION_PAR_DEFAUT_MS) <= 30_000:
+        raise ValueError("DELAI_CONNEXION_MS doit etre compris entre 3000 et 30000.")
 
 
 def encoder_url(texte):
@@ -68,9 +72,14 @@ def charger_certificats(contexte_tls, fichier):
 
 
 class ApiErreur(Exception):
-    def __init__(self, message, incertain=False):
+    def __init__(self, message, incertain=False, statut=None):
         super().__init__(message)
         self.incertain = incertain
+        self.statut = statut
+
+
+class LectureDifferee(Exception):
+    """La prochaine lecture est reportee, ou son cycle n'est plus actif."""
 
 
 def decrire_erreur_transport(erreur, etape=None):
@@ -231,10 +240,11 @@ async def lire_reponse_http(lecteur, diagnostic=None):
 class SuiviPushbullet:
     """Reponses autorisees, dates serveur, codes uniques et OK deja consommes."""
 
-    def __init__(self, destinataire, piece, session):
+    def __init__(self, destinataire, piece, session, plateforme="Wokwi"):
         self.destinataire = destinataire.strip().lower()
         self.piece = piece
         self.session = session
+        self.plateforme = plateforme
         self.utilisateur = None
         self.email_expediteur = ""
         self.destinataire_iden = None
@@ -278,13 +288,13 @@ class SuiviPushbullet:
         code = self.code(demande)
         if nature == "AIDE":
             numero = self.demandes[demande]["compteur"] + 1
-            titre = "[TEST AIDE] %s (Wokwi)" % self.piece
+            titre = "[TEST AIDE] %s (%s)" % (self.piece, self.plateforme)
             corps = ("TEST - aucune intervention necessaire.\nEssai du bouton : %s.\n"
                      "Reference : %s. Notification %d sur 5.\n\n"
                      "Repondre au compte expediteur : OK\nOu : OK %s") % (
                          self.piece, code, numero, code)
         else:
-            titre = "[TEST ANNULATION] %s (Wokwi)" % self.piece
+            titre = "[TEST ANNULATION] %s (%s)" % (self.piece, self.plateforme)
             corps = ("TEST - aucune intervention necessaire.\n%s - reference %s.\n"
                      "Demande annulee : Tout compte fait, tout va bien.") % (self.piece, code)
         return {"type": "note", "email": self.destinataire, "title": titre, "body": corps}
@@ -297,12 +307,13 @@ class SuiviPushbullet:
             return max(0, (etat["date"] - 1000) // 1000)
         return None
 
-    def motif_rejet(self, push):
+    def motif_rejet(self, push, date_minimale=None):
         demande = self.courante
         etat = self.demandes.get(demande)
         if not etat or etat["terminee"]:
             return "aucune demande active"
-        if etat["date"] is None:
+        date_alerte = date_minimale if date_minimale is not None else etat["date"]
+        if date_alerte is None:
             return "date de l'alerte absente"
         if not push.get("iden"):
             return "identifiant absent"
@@ -315,7 +326,7 @@ class SuiviPushbullet:
         date = horodatage_ms(push.get("created"))
         if date is None:
             return "date du OK invalide"
-        if date < etat["date"]:
+        if date < date_alerte:
             return "OK anterieur a cette alerte"
         if (self.destinataire == self.email_expediteur or
                 (self.destinataire_iden is not None and self.destinataire_iden == self.utilisateur)):
@@ -335,13 +346,129 @@ class SuiviPushbullet:
             return "texte ou reference differente"
         return None
 
-    def examiner(self, push):
-        if self.motif_rejet(push) is not None:
+    def examiner(self, push, date_minimale=None):
+        if self.motif_rejet(push, date_minimale) is not None:
             return None
         demande = self.courante
         self.reponses_utilisees.add(push["iden"])
         self.fermer(demande)
         return demande
+
+
+class SuiviGroupe:
+    """Un suivi autorise par destinataire, avec une reference commune."""
+
+    def __init__(self, contacts, piece, session, plateforme="ESP32"):
+        self.contacts = [c for c in contacts if c["actif"]]
+        self.suivis = {c["email"]: SuiviPushbullet(c["email"], piece, session, plateforme)
+                       for c in self.contacts}
+        self.courante = None
+        self.repondants = {}
+
+    def identifier(self, utilisateur):
+        for suivi in self.suivis.values():
+            suivi.identifier(utilisateur)
+
+    def ouvrir(self, demande):
+        self.courante = demande
+        for suivi in self.suivis.values():
+            suivi.ouvrir(demande)
+            etat = suivi.demandes[demande]
+            for cle, valeur in (("dernier_envoi", None), ("dernier_essai", None),
+                                ("bloque", False), ("a_pu_recevoir", False),
+                                ("annulation_acceptee", False), ("erreur", None), ("incertain", False)):
+                if cle not in etat:
+                    etat[cle] = valeur
+
+    def fermer(self, demande):
+        for suivi in self.suivis.values():
+            suivi.fermer(demande)
+
+    def code(self, demande):
+        return next(iter(self.suivis.values())).code(demande)
+
+    def etats(self, demande):
+        return {email: s.demandes[demande] for email, s in self.suivis.items() if demande in s.demandes}
+
+    def terminee(self, demande):
+        etats = self.etats(demande)
+        return bool(etats) and all(e["terminee"] for e in etats.values())
+
+    def compteur_max(self, demande):
+        valeurs = [e["compteur"] for e in self.etats(demande).values()]
+        return max(valeurs) if valeurs else 0
+
+    def plafond_atteint(self, demande):
+        etats = self.etats(demande)
+        return bool(etats) and any(e["compteur"] for e in etats.values()) and all(
+            e["compteur"] >= 5 or e["bloque"] for e in etats.values())
+
+    def cibles(self, nature, demande, maintenant, intervalle):
+        resultat = []
+        etats = self.etats(demande)
+        for contact in self.contacts:
+            email = contact["email"]
+            if email not in etats:
+                continue
+            etat = etats[email]
+            if etat["bloque"]:
+                continue
+            if nature == "AIDE":
+                if etat["terminee"] or etat["compteur"] >= 5:
+                    continue
+                dernier = etat["dernier_envoi"]
+                if dernier is not None and ecart_ms(maintenant, dernier) < intervalle:
+                    continue
+            elif not etat["a_pu_recevoir"] or etat["annulation_acceptee"]:
+                continue
+            essai = etat["dernier_essai"]
+            if essai is None or ecart_ms(maintenant, essai) >= 2000:
+                resultat.append(email)
+        return resultat
+
+    def annulation_terminee(self, demande):
+        return all(not e["a_pu_recevoir"] or e["annulation_acceptee"] or e["bloque"]
+                   for e in self.etats(demande).values())
+
+    def charge(self, nature, demande, email):
+        return self.suivis[email].charge(nature, demande)
+
+    def accepte(self, demande, reponse, email):
+        self.suivis[email].accepte(demande, reponse)
+
+    def date_lecture(self):
+        dates = [s.date_lecture() for s in self.suivis.values() if s.date_lecture() is not None]
+        return min(dates) if dates else None
+
+    def motif_rejet(self, push):
+        dates = [e["date"] for e in self.etats(self.courante).values() if e["date"] is not None]
+        date = min(dates) if dates else None
+        motifs = [s.motif_rejet(push, date) for s in self.suivis.values()]
+        return None if None in motifs else "aucun contact autorise pour cette demande"
+
+    def examiner(self, push):
+        dates = [e["date"] for e in self.etats(self.courante).values() if e["date"] is not None]
+        date = min(dates) if dates else None
+        for contact in self.contacts:
+            suivi = self.suivis[contact["email"]]
+            demande = suivi.examiner(push, date)
+            if demande is not None:
+                self.repondants[demande] = contact
+                self.fermer(demande)
+                return demande
+        return None
+
+    def messages_confirmation(self, demande):
+        repondant = self.repondants.get(demande)
+        if repondant is None:
+            return []
+        suivi = self.suivis[repondant["email"]]
+        return [{"type": "note", "email": contact["email"],
+                 "title": "[TEST REPONSE] %s (%s)" % (suivi.piece, suivi.plateforme),
+                 "body": ("TEST - aucune intervention necessaire.\n%s - reference %s.\n"
+                          "C’est bon, %s a répondu OK.\nLes relances sont arrêtées.") % (
+                              suivi.piece, suivi.code(demande), repondant["nom"])}
+                for contact in self.contacts if contact["email"] != repondant["email"]]
 
 
 async def synchroniser_horloge():
@@ -406,6 +533,7 @@ class ReseauReel:
         self.echecs = 0
         self.resultats = []
         self.confirmations = []
+        self.annonces = []
         self.tache_envoi = None
         self.connexion_depuis = None
         self.dernier_controle = None
@@ -418,8 +546,9 @@ class ReseauReel:
         self.connexion_perimee = False
         self.adresse_api = None
         self.date_dns = None
-        self.suivi = SuiviPushbullet(self.c.DESTINATAIRE_EMAIL, self.c.PIECE,
-                                    binascii.hexlify(os.urandom(6)).decode().upper())
+        self.suivi = SuiviGroupe(contacts_configuration(self.c), self.c.PIECE,
+                                    binascii.hexlify(os.urandom(6)).decode().upper(),
+                                    getattr(self.c, "PLATEFORME", "Wokwi"))
         self.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         self.tls.verify_mode = ssl.CERT_REQUIRED
         charger_certificats(self.tls, self.c.FICHIER_CA)
@@ -470,6 +599,7 @@ class ReseauReel:
         if (getattr(self, "adresse_api", None) is None or
                 ecart_ms(maintenant, self.date_dns) >= CACHE_DNS_MS):
             self.etape_http = "resolution DNS"
+            diagnostic.contexte(phase=self.etape_http)
             # Cette resolution reste bloquante dans MicroPython, mais n'est
             # plus repetee a chaque lecture. Conserver le nom pour TLS/SNI.
             self.adresse_api = socket.getaddrinfo(HOTE_API, 443, 0, socket.SOCK_STREAM)[0][-1][0]
@@ -536,8 +666,21 @@ class ReseauReel:
             raise
 
     def tracer_https(self, methode, chemin, etape):
+        ressource = chemin.split("?", 1)[0]
+        diagnostic.contexte(phase=etape, methode=methode,
+                             ressource=ressource if ressource in ("pushes", "users/me") else "autre")
         if getattr(self.c, "TRACE_HTTPS", True):
             self.journal("[HTTPS] %s %s : %s" % (methode, chemin.split("?", 1)[0], etape))
+
+    def delai_https_ms(self):
+        derniere = getattr(self, "derniere_utilisation_https", None)
+        reutilisable = (getattr(self, "connexion_https", None) is not None and
+                       not getattr(self, "connexion_perimee", False) and
+                       (derniere is None or ecart_ms(maintenant_ms(), derniere) < INACTIVITE_HTTPS_MS))
+        if reutilisable:
+            return self.c.DELAI_HTTP_MS
+        return max(self.c.DELAI_HTTP_MS, getattr(
+            self.c, "DELAI_CONNEXION_MS", DELAI_CONNEXION_PAR_DEFAUT_MS))
 
     async def api(self, methode, chemin, corps=None, fond=False):
         # Cyan pour les envois voulus par l'utilisateur (AIDE, ANNULATION) ;
@@ -546,24 +689,46 @@ class ReseauReel:
         async with self.verrou:
             if not self.wifi or not self.pushbullet or not self.wlan.isconnected():
                 raise ApiErreur("Transmission suspendue avant requete.")
+            if fond and self.differer_lecture():
+                raise LectureDifferee()
+
+            async def transmettre():
+                # Recontroler dans la tache creee par wait_for, apres le
+                # passage des boutons pendant la preparation du voyant.
+                # Cette garde protege aussi chaque page de reponses.
+                if fond:
+                    if self.differer_lecture():
+                        raise LectureDifferee()
+                    self.retenue_depuis = None  # Consommer l'autorisation.
+                return await self.https(methode, chemin, corps)
+
             setattr(self, drapeau, True)
+            delai_http = self.c.DELAI_HTTP_MS
             try:
                 # La boucle des boutons tourne toutes les 5 ms. Lui laisser
                 # poser le voyant AVANT DNS/TLS, meme s'ils bloquent ensuite.
                 await asyncio.sleep(0.02)
+                delai_http = self.delai_https_ms()
+                self.tracer_https(methode, chemin, "budget de la requete : %d ms" % delai_http)
                 statut, entetes, donnees = await asyncio.wait_for(
-                    self.https(methode, chemin, corps), self.c.DELAI_HTTP_MS / 1000)
+                    transmettre(), delai_http / 1000)
             except asyncio.TimeoutError:
+                diagnostic.evenement("http_erreur", classe="TimeoutError")
                 raise ApiErreur("Delai HTTPS depasse (%d ms) : %s." % (
-                    self.c.DELAI_HTTP_MS, getattr(self, "etape_http", "connexion/lecture")),
+                    delai_http, getattr(self, "etape_http", "connexion/lecture")),
                     methode == "POST")
             except OSError as erreur:
+                diagnostic.evenement("http_erreur", classe="OSError")
                 raise ApiErreur("Connexion HTTPS indisponible : " + decrire_erreur_transport(
                     erreur, getattr(self, "etape_http", "connexion/lecture")), methode == "POST")
+            except ApiErreur as erreur:
+                diagnostic.evenement("http_erreur", classe="ApiErreur", statut=erreur.statut)
+                raise
             finally:
                 setattr(self, drapeau, False)
         if statut != 200:
-            if statut in (400, 401, 403, 404):
+            diagnostic.evenement("http_erreur", classe="HTTP", statut=statut)
+            if statut in (401, 403) or (methode != "POST" and statut in (400, 404)):
                 self.erreur_permanente = True
             if statut == 429:
                 try:
@@ -573,7 +738,7 @@ class ReseauReel:
                 self.pause_depuis = maintenant_ms()
                 self.pause_ms = max(30, min(3600, secondes)) * 1000
             raise ApiErreur("HTTP %d : transmission non confirmee." % statut,
-                            methode == "POST" and statut >= 500)
+                            methode == "POST" and statut >= 500, statut=statut)
         return donnees
 
     def commencer(self, nature, demande, maintenant):
@@ -583,6 +748,10 @@ class ReseauReel:
             self.suivi.ouvrir(demande)
         else:
             self.suivi.fermer(demande)
+        if isinstance(self.suivi, SuiviGroupe):
+            cibles = self.suivi.cibles(nature, demande, maintenant, self.c.INTERVALLE_RELANCE_MS)
+            if not cibles and not (nature == "ANNULATION" and self.suivi.annulation_terminee(demande)):
+                return False
         requete = {"nature": nature, "demande": demande, "debut": maintenant, "erreur": None}
         self.en_cours = requete
         self.tache_envoi = asyncio.create_task(self.envoyer(requete))
@@ -590,6 +759,9 @@ class ReseauReel:
         return True
 
     async def envoyer(self, requete):
+        if isinstance(self.suivi, SuiviGroupe):
+            await self.envoyer_groupe(requete)
+            return
         try:
             donnees = await self.api("POST", "pushes", self.suivi.charge(requete["nature"], requete["demande"]))
             if requete["nature"] == "AIDE":
@@ -612,6 +784,81 @@ class ReseauReel:
             if incertain:
                 requete["erreur"] += " ; resultat incertain, doublon possible au reessai"
             self.pret = False
+        finally:
+            if not requete.get("obsolete"):
+                self.resultats.append(requete)
+
+    def doit_envoyer_aide(self, demande, maintenant):
+        if not isinstance(self.suivi, SuiviGroupe):
+            return True
+        if not self.suivi.etats(demande):
+            return True
+        return bool(self.suivi.cibles("AIDE", demande, maintenant, self.c.INTERVALLE_RELANCE_MS))
+
+    def plafond_atteint(self, demande):
+        if isinstance(self.suivi, SuiviGroupe):
+            return self.suivi.plafond_atteint(demande)
+        return self.suivi.demandes.get(demande, {}).get("compteur", 0) >= 5
+
+    async def envoyer_groupe(self, requete):
+        nature, demande = requete["nature"], requete["demande"]
+        requete["accepte"] = False
+        acceptes, email_courant = 0, None
+        try:
+            cibles = self.suivi.cibles(nature, demande, maintenant_ms(), self.c.INTERVALLE_RELANCE_MS)
+            for email in cibles:
+                if (requete.get("obsolete") or (nature == "AIDE" and self.suivi.terminee(demande)) or
+                        not self.disponible()):
+                    break
+                email_courant = email
+                etat = self.suivi.etats(demande)[email]
+                etat["dernier_essai"] = maintenant_ms()
+                if nature == "AIDE":
+                    etat["a_pu_recevoir"] = True
+                try:
+                    donnees = await self.api("POST", "pushes", self.suivi.charge(nature, demande, email))
+                    if nature == "AIDE":
+                        self.suivi.accepte(demande, donnees, email)
+                        etat["dernier_envoi"] = maintenant_ms()
+                    elif donnees.get("iden"):
+                        etat["annulation_acceptee"] = True
+                    else:
+                        raise ApiErreur("Annulation sans identifiant : resultat incertain.", True)
+                    etat["erreur"], etat["incertain"] = None, False
+                    acceptes += 1
+                    rang = [c["email"] for c in self.suivi.contacts].index(email) + 1
+                    self.journal("[CONTACT %d] %s accepte%s." % (rang, nature,
+                                 " (%d/5)" % etat["compteur"] if nature == "AIDE" else ""))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as erreur:
+                    etat["incertain"] = not isinstance(erreur, ApiErreur) or erreur.incertain
+                    etat["erreur"] = str(erreur) if isinstance(erreur, ApiErreur) else decrire_erreur_transport(erreur)
+                    if nature == "AIDE" and not etat["incertain"] and etat["compteur"] == 0:
+                        etat["a_pu_recevoir"] = False
+                    etat["bloque"] = isinstance(erreur, ApiErreur) and erreur.statut in (400, 404)
+                    rang = [c["email"] for c in self.suivi.contacts].index(email) + 1
+                    self.journal("[CONTACT %d] %s%s" % (rang, etat["erreur"],
+                                 " ; resultat incertain, doublon possible au reessai" if etat["incertain"] else ""))
+                    requete["erreur"] = "un ou plusieurs contacts non confirmes"
+                email_courant = None
+                await asyncio.sleep(0)
+            requete["envois"] = self.suivi.compteur_max(demande)
+            requete["accepte"] = acceptes > 0 if nature == "AIDE" else self.suivi.annulation_terminee(demande)
+            etats = self.suivi.etats(demande)
+            requete["contacts"] = [{"email": email, "envois": e["compteur"], "erreur": e["erreur"],
+                                    "incertain": e["incertain"], "bloque": e["bloque"],
+                                    "annulation_acceptee": e["annulation_acceptee"]} for email, e in etats.items()]
+            requete["partiel"] = any(e["erreur"] for e in etats.values())
+            self.journal("[REEL] %s : %d acceptation(s) dans ce passage ; %d contact(s) ; %d en echec." % (
+                nature, acceptes, len(etats), sum(1 for e in etats.values() if e["erreur"])))
+            if not acceptes and cibles and not any(e["bloque"] for e in etats.values()):
+                self.pret = False
+        except asyncio.CancelledError:
+            if email_courant is not None:
+                etat = self.suivi.etats(demande)[email_courant]
+                etat["incertain"], etat["erreur"] = True, "requete interrompue : resultat incertain"
+            requete["erreur"] = "requete interrompue : resultat incertain"
         finally:
             if not requete.get("obsolete"):
                 self.resultats.append(requete)
@@ -663,7 +910,8 @@ class ReseauReel:
         if getattr(self, "retenue_depuis", None) is None:
             self.retenue_depuis = maintenant
         if ecart_ms(maintenant, self.retenue_depuis) >= RETENUE_MAX_MS:
-            self.retenue_depuis = None  # Lire maintenant, puis nouvelle retenue possible.
+            # Garder l'autorisation jusqu'au depart reel : plusieurs gardes
+            # successives ne doivent pas recreer une retenue de vingt secondes.
             return False
         return True
 
@@ -672,11 +920,22 @@ class ReseauReel:
         if date is None:
             return
         chemin = "pushes?active=true&limit=50&modified_after=%s" % date
+        demande_lue = self.suivi.courante
         curseur = None
         deja_vus = set()
         for _ in range(20):
-            donnees = await self.api("GET", chemin + ("&cursor=" + encoder_url(curseur) if curseur else ""),
-                                     fond=True)
+            while True:
+                if self.suivi.courante != demande_lue or self.suivi.date_lecture() != date:
+                    raise LectureDifferee()  # Le cycle a change ou a ete annule.
+                try:
+                    donnees = await self.api("GET", chemin + (
+                        "&cursor=" + encoder_url(curseur) if curseur else ""), fond=True)
+                    break
+                except LectureDifferee:
+                    # Garder le curseur : recommencer a la premiere page a
+                    # chaque geste pourrait empecher d'atteindre un OK plus loin.
+                    # Aucun verrou reseau n'est conserve pendant cette attente.
+                    await asyncio.sleep(0.1)
             if not isinstance(donnees.get("pushes"), list):
                 raise ApiErreur("Liste de reponses invalide.")
             candidats = 0
@@ -692,6 +951,8 @@ class ReseauReel:
                 demande = self.suivi.examiner(push)
                 if demande is not None:
                     self.confirmations.append(demande)
+                    if isinstance(self.suivi, SuiviGroupe):
+                        self.annonces.extend(self.suivi.messages_confirmation(demande))
                     self.journal("[REEL] OK distant autorise pour la reference " + self.suivi.code(demande))
                     return
             self.journal("[OK] Lecture : %d messages ; %d textes OK ; rejets=%s" % (
@@ -705,6 +966,26 @@ class ReseauReel:
             deja_vus.add(curseur)
         raise ApiErreur("Trop de pages de reponses ; lecture incomplete.")
 
+    async def annoncer_confirmation(self):
+        # Le OK est deja remis au boitier : cette information aux proches
+        # reste secondaire et ne modifie ni la confirmation ni les compteurs.
+        if not self.annonces or self.en_cours is not None or not self.disponible():
+            return
+        charge = self.annonces[0]
+        try:
+            donnees = await self.api("POST", "pushes", charge, fond=True)
+            if not donnees.get("iden"):
+                raise ApiErreur("Annonce sans identifiant : resultat incertain.", True)
+            self.journal("[REEL] Reponse du contact annoncee a un autre contact actif.")
+        except LectureDifferee:
+            raise  # Aucun POST parti : attendre la fin du geste sur le bouton.
+        except Exception as erreur:
+            # Un seul essai par destinataire ; une erreur peut cacher un POST
+            # accepte. Ne pas creer de doublon ni afficher de donnees privees.
+            self.journal("[REEL] Annonce de reponse non confirmee (%s) ; OK conserve." %
+                         type(erreur).__name__)
+        self.annonces.pop(0)
+
     async def surveiller_reactivite(self):
         precedent = maintenant_ms()
         while True:
@@ -714,6 +995,8 @@ class ReseauReel:
             if pause >= 250:
                 self.journal("[DIAGNOSTIC] Pause de la boucle : %d ms ; etape=%s" % (
                     pause, getattr(self, "etape_http", "preparation du reseau")))
+                if pause >= 2000:
+                    diagnostic.evenement("pause_boucle", duree_ms=pause)
             precedent = maintenant
 
     async def boucle(self):
@@ -755,15 +1038,21 @@ class ReseauReel:
                     if not self.horloge_prete:
                         await synchroniser_horloge()
                         self.horloge_prete = True
+                        diagnostic.horloge_reglee()
                         self.journal("[REEL] Horloge reglee ; verification TLS active.")
                         tm = time.gmtime()
                         self.journal("[REEL] Horloge UTC : %04d-%02d-%02d %02d:%02d:%02d" % tm[:6])
                     if not self.pret and (self.dernier_controle is None or
                                           ecart_ms(maintenant, self.dernier_controle) >= self.delai_controle()):
+                        differee = False
                         try:
                             utilisateur = await self.api("GET", "users/me", fond=True)
+                        except LectureDifferee:
+                            differee = True
+                            raise
                         finally:
-                            self.dernier_controle = maintenant_ms()
+                            if not differee:
+                                self.dernier_controle = maintenant_ms()
                         self.suivi.identifier(utilisateur)
                         self.pret = True
                         self.echecs = 0
@@ -771,14 +1060,27 @@ class ReseauReel:
                     if (self.pret and self.suivi.date_lecture() is not None and (
                             self.dernier_ok is None or ecart_ms(maintenant, self.dernier_ok) >= self.c.INTERVALLE_LECTURE_MS)
                             and not self.differer_lecture()):
+                        differee = False
                         try:
                             await self.lire_reponses()
+                        except LectureDifferee:
+                            differee = True
+                            raise
                         finally:
                             # Intervalle compte APRES la lecture, meme si elle
                             # dure plus longtemps que prevu.
-                            self.dernier_ok = maintenant_ms()
+                            if not differee:
+                                self.dernier_ok = maintenant_ms()
+                    elif getattr(self, "annonces", None) and not self.differer_lecture():
+                        await self.annoncer_confirmation()
+            except LectureDifferee:
+                # Pas de panne, de backoff ou de nouveau delai de lecture.
+                # La boucle reste vivante et reprend apres le geste.
+                pass
             except Exception as erreur:
                 self.pret = False
+                diagnostic.evenement("http_erreur", classe=type(erreur).__name__,
+                                     statut=erreur.statut if isinstance(erreur, ApiErreur) else None)
                 # Backoff : chaque essai coute une pause TLS, meme au REPOS.
                 self.echecs = getattr(self, "echecs", 0) + 1
                 self.journal("[REEL] " + (str(erreur) if isinstance(erreur, ApiErreur) else

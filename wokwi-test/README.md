@@ -2,7 +2,35 @@
 
 Le premier test de bouton et de LED a été validé par l’utilisateur le 12 octobre 2026. Il est conservé dans [test_entrees_sorties.py](test_entrees_sorties.py).
 
-Le programme [main.py](main.py) propose deux modes : faux réseau ou essais réels Wi-Fi/Pushbullet. Il conserve AIDE sur GPIO12, l’orange en PWM, la suspension des relances pendant l’annulation, le retour au repos et la relance manuelle après confirmation ou plafond. Deux interrupteurs à glissière commandent les coupures sur GPIO13 et GPIO14. Cent vingt-six tests locaux passent : machine à états, PWM vert → bleu, faux réseau, reconnaissance des réponses et transport réel avec HTTP remplacé par des réponses de test. Le fichier de certificats valide le certificat actuel de l’API Pushbullet depuis le PC. La lecture HTTPS fonctionne sans jeton dans Wokwi (HTTP 401 attendu) ; l’utilisateur a ensuite validé l’aller-retour avec le jeton temporaire ; aucun jeton ni envoi réel n’a été utilisé par l’assistant.
+Le programme [main.py](main.py) propose deux modes : faux réseau ou essais réels Wi-Fi/Pushbullet. Il conserve AIDE sur GPIO12, l’orange en PWM, la suspension des relances pendant l’annulation, le retour au repos et la relance manuelle après confirmation ou plafond. Deux interrupteurs à glissière commandent les coupures sur GPIO13 et GPIO14. Cent trente-huit tests locaux passent : machine à états, PWM vert → bleu, faux réseau, reconnaissance des réponses et transport réel avec HTTP remplacé par des réponses de test. Le fichier de certificats valide le certificat actuel de l’API Pushbullet depuis le PC. La lecture HTTPS fonctionne sans jeton dans Wokwi (HTTP 401 attendu) ; l’utilisateur a ensuite validé l’aller-retour avec le jeton temporaire ; aucun jeton ni envoi réel n’a été utilisé par l’assistant.
+
+## Diagnostic d'une fermeture TLS avant réponse HTTP
+
+Deux essais utilisateur avec `MP-HTTPS-20261013-2` échouent pendant `attente TLS/drain`, après environ 14,8 secondes, malgré un budget de trente secondes. L'erreur `-29312` (`SSL_CONN_EOF`, soit `-0x7280` dans MbedTLS) indique une fin de connexion avant réponse HTTP. Ces traces ne permettent pas d'attribuer la fermeture à Pushbullet, au trajet réseau ou au simulateur. Un GET sans jeton depuis le PC obtient HTTP 401 avec validation TLS ; cela ne vérifie pas le trajet Wokwi.
+
+[diagnostic_tls.py](diagnostic_tls.py) compare un GET via asyncio et un GET via socket TLS bloquant, vers la même adresse IP, avec les mêmes certificats de confiance, vérification du nom et horloge synchronisée. Il ne lit pas la configuration, ne contient aucun jeton et n'envoie aucune notification. HTTP 401 est le résultat attendu sans authentification. Le mode bloquant sert uniquement à isoler le problème ; ce n'est pas une modification du programme des boutons.
+
+Le premier diagnostic utilisateur reproduit `SSL_CONN_EOF` dans les deux modes, après 15 174 et 15 193 ms : l'échec ne dépend donc pas uniquement d'asyncio. La version `SONDE-TLS-2` ajoute d'abord une connexion témoin vers `docs.micropython.org`. Avec le même ensemble de certificats, les GET depuis le PC retournent HTTP 302 pour ce témoin et HTTP 401 pour Pushbullet, sans jeton ; la vérification PC conserve le nom d'hôte et utilise `VERIFY_X509_PARTIAL_CHAIN`. Ces résultats ne valident pas le trajet Wokwi. Tout statut HTTP du témoin indique que sa négociation TLS a abouti ; ses redirections ne sont pas suivies. Si seul Pushbullet échoue, cela cible sa connexion sans identifier à soi seul le serveur, la passerelle ou les paramètres TLS responsables. L'essai témoin dans Wokwi reste à faire.
+
+L'utilisateur a exécuté `SONDE-TLS-2` : le témoin retourne HTTP 302 après 5 131 ms avec TLS vérifié. Pushbullet échoue avec `SSL_CONN_EOF` après 15 222 ms via asyncio et 15 182 ms via socket bloquant. Wokwi peut donc établir une connexion TLS vérifiée vers le témoin ; la connexion à Pushbullet échoue dans les deux modes. Ces observations ne prouvent ni un blocage par la passerelle, ni une panne de Pushbullet, ni une incompatibilité particulière de négociation TLS. L'étape suivante est la capture réseau du même diagnostic, sans jeton, pour examiner DNS, TCP, ClientHello, les réponses TLS éventuelles et la fermeture.
+
+Pour l'essai, conserver `pushbullet_reel.py` et `certificats.py`, remplacer temporairement le contenu de `main.py` dans Wokwi par ce diagnostic, puis arrêter complètement et relancer la simulation afin de réinitialiser le watchdog précédent. Relever les sections `SONDE TEMOIN`, `SONDE ASYNC` et `SONDE BLOQUANTE`. Pour exporter le trafic, cliquer sur l'icône Wi-Fi du simulateur puis « Download PCAP file » ([documentation Wokwi](https://docs.wokwi.com/guides/esp32-wifi#viewing-wifi-traffic-with-wireshark)). Conserver la capture du diagnostic sans jeton, puis rétablir [main.py](main.py). Ne pas modifier `configuration.py`.
+
+## Budget de nouvelle connexion (`MP-HTTPS-20261013-2`)
+
+Un essai utilisateur a retenu la boucle 14 806 ms pendant `attente TLS/drain`, dépassant le budget HTTP de douze secondes avant toute réponse HTTP. Le transport attribue désormais trente secondes par défaut aux requêtes qui nécessitent une nouvelle connexion TLS (première connexion, connexion périmée ou inactive), puis conserve `DELAI_HTTP_MS = 12_000` pour les connexions réutilisables. Le budget s'applique à toute la requête, pas seulement à la négociation.
+
+`DELAI_CONNEXION_MS = 30_000` peut être configuré ; si le champ est absent du fichier Wokwi existant, la valeur par défaut s'applique automatiquement. Les deux budgets sont bornés de 3 000 à 30 000 ms ; une nouvelle connexion ne reçoit jamais un budget plus court que celui des échanges réutilisés. Le diagnostic affiche le budget choisi et les erreurs indiquent ce même budget. Les délais de reprise après échec, la priorité des gestes et le traitement des POST incertains restent actifs.
+
+Ces délais reposent sur asyncio : un appel natif qui retient l'interpréteur peut dépasser l'échéance avant que l'annulation soit traitée. Cette marge ne rend pas TLS interruptible et n'est pas une garantie de latence des boutons. Le watchdog reste à soixante secondes, avec les limites de persistance déjà documentées. Quatre tests supplémentaires vérifient la sélection, la configuration, l'application et les diagnostics du budget ; 138 tests locaux passent. Les essais utilisateur confirment le budget de trente secondes mais rencontrent ensuite `SSL_CONN_EOF` : voir le diagnostic ci-dessus.
+
+## Correction de priorité (`MP-HTTPS-20261013-1`)
+
+Une course a été reproduite : un appui sur AIDE pendant les vingt millisecondes de préparation du voyant n'empêchait pas le départ d'une lecture de fond déjà décidée. Le transport revérifie désormais la priorité après acquisition du verrou puis dans la tâche qui va lancer HTTPS, après la préparation du voyant. Chaque page de réponses passe par ces gardes ; les envois AIDE et ANNULATION ne sont pas reportés.
+
+Un report est traité séparément d'une panne : il n'efface pas l'état « prêt », n'augmente pas le backoff et ne recommence pas l'intervalle de dix secondes. Une lecture paginée conserve son curseur pendant le geste, libère le verrou et laisse tourner la boucle des boutons ; elle abandonne si sa demande est annulée ou remplacée. L'autorisation après vingt secondes de retenue est conservée à travers les gardes successives et consommée au départ effectif de la requête, pour éviter qu'un bouton bloqué affame les lectures.
+
+Huit tests supplémentaires couvrent les appuis pendant la préparation et l'attente du verrou, les gestes entre pages, le plafond de retenue, les envois prioritaires, le maintien des temporisations et l'annulation du cycle. Les 134 tests locaux passent ; cette correction reste à essayer dans Wokwi. Pour cette mise à jour, remplacer `pushbullet_reel.py`, en conservant le `main.py` de la version précédente avec gestion des gestes et watchdog. Le transport affiche `MP-HTTPS-20261013-1`.
 
 ## Cyan fixe pendant les communications
 
@@ -34,7 +62,7 @@ Treize tests supplémentaires, soit 126 au total. Remplacer `main.py` et `pushbu
 L’utilisateur a accepté d’utiliser un jeton temporaire dans Wokwi et de le révoquer après les essais. Le prototype réel vise un seul destinataire, l’utilisateur, avec des messages explicitement marqués TEST. Le composant payant « WiFi Access Point » n’est pas nécessaire : utiliser le réseau gratuit Wokwi-GUEST. Sources : [réseau Wokwi](https://docs.wokwi.com/guides/esp32-wifi), [API Pushbullet](https://docs.pushbullet.com/).
 
 1. Dans le projet Wokwi MicroPython ESP32-S3, remplacer `main.py` par [main.py](main.py). Garder le [diagram.json](diagram.json) à deux boutons et deux interrupteurs déjà utilisé.
-2. Ajouter trois fichiers au projet avec leurs noms exacts : [configuration.py](configuration.py), [pushbullet_reel.py](pushbullet_reel.py) et [certificats.py](certificats.py). Copier le contenu de chacun ; les certificats sont publics, pas secrets. L’ancien [ca.pem](ca.pem) reste utilisable : le transport le lit s’il est présent, sinon importe `certificats.py`. Wokwi copie les fichiers du projet dans son système de fichiers MicroPython ([documentation](https://docs.wokwi.com/guides/micropython)).
+2. Ajouter les fichiers au projet avec leurs noms exacts : [configuration.py](configuration.py), [pushbullet_reel.py](pushbullet_reel.py), [certificats.py](certificats.py), [contacts.py](contacts.py) et [audio.py](audio.py). Copier le contenu de chacun ; les certificats sont publics, pas secrets. L’ancien [ca.pem](ca.pem) reste utilisable : le transport le lit s’il est présent, sinon importe `certificats.py`. Wokwi copie les fichiers du projet dans son système de fichiers MicroPython ([documentation](https://docs.wokwi.com/guides/micropython)).
 3. Dans `configuration.py`, garder `MODE_RESEAU = "reel"` et renseigner `JETON_PUSHBULLET` et `DESTINATAIRE_EMAIL` avec le jeton temporaire et l’adresse du compte qui recevra le test. `PIECE = "Lit"` peut être adapté. Le jeton fourni dans le workspace est vide.
 4. Mettre les deux interrupteurs sur ON à droite et lancer. Attendre les messages « Horloge reglee ; verification TLS active » puis « Compte Pushbullet verifie ; pret pour AIDE ». Le violet pendant cette préparation est normal.
 5. Appuyer brièvement sur AIDE : recevoir **[TEST AIDE] Lit (Wokwi)**. L’acceptation de l’API augmente le compteur et passe à l’orange clignotant. Les relances réelles sont réglées à deux minutes, maximum cinq envois par cycle. On peut changer leur durée dans la configuration, avec un minimum de dix secondes pour les essais.
@@ -183,3 +211,61 @@ Le mode simulé ne transmet aucune alerte et n’utilise aucun jeton. Il ne trai
 Pour les tests locaux sous Python PC : `python -B -m unittest -v test_machine_etats test_reseau_simule test_pushbullet_reel`. Le fichier `test_entrees_sorties.py` est un programme matériel MicroPython conservé, et non un test unittest importable sous Python PC. Les tests asyncio ont nécessité une exécution hors sandbox sur Windows, car la boucle Python utilise une connexion interne ; tous les échanges Pushbullet des tests sont remplacés par des réponses locales.
 
 Les couleurs et le geste d’annulation sont des choix d’essai à valider avec le père avant adoption définitive.
+## Contacts dans la version MicroPython actuelle
+
+Le transport prend maintenant en charge `DESTINATAIRES`, une liste de contacts
+avec `nom`, `email` et `actif`. L’ancien `DESTINATAIRE_EMAIL` reste compatible.
+Ajouter aussi **contacts.py** au projet Wokwi lors de la copie des fichiers du
+transport actuel. Chaque contact actif a son compteur et son échéance de relance ;
+le premier OK autorisé confirme la demande pour tous. Les 215 tests locaux passent.
+Le [guide carte](../carte/README.md#contacts-depuis-le-portail) décrit la saisie
+depuis le portail et les essais qui restent à faire avec deux comptes réels.
+
+## Préparation sonore sans matériel (16 octobre 2026)
+
+[audio.py](audio.py) prépare la détection de sons courts répétés et les séquences
+de bips. La machine à états l’utilise seulement si un objet `AudioBoitier` est
+fourni. Par défaut, `DETECTION_SONORE_ACTIVE` et `BIPS_ACTIFS` sont False, aussi
+avec un ancien profil ne contenant pas ces options : aucun son, aucune lecture
+ADC et aucune broche réservée.
+
+Sur PC, depuis `wokwi-test/`, lancer les scénarios sonores avec :
+
+```powershell
+python -B -m unittest -v test_audio
+```
+
+Les niveaux et les sorties sont simulés, sans accès réseau ni notification.
+Les 25 scénarios vérifient notamment trois cris courts, un bruit continu, les
+claquements, les mesures absentes, les pauses longues et le retour du compteur
+de temps. Ils vérifient aussi le cycle d’aide, l’annulation dès le premier maintien
+après des cris, le bip local sans Wi-Fi, le motif distinct après `OK` et l’absence
+de nouvelles demandes pendant l’attente ou les bips.
+
+Pour la suite complète de tests PC (258 tests au 16 octobre) :
+
+```powershell
+python -B -m unittest test_audio test_journal test_machine_etats test_reseau_simule test_pushbullet_reel test_config_wifi test_contacts test_wifi_et_voyants
+```
+
+`test_entrees_sorties.py` reste un essai matériel MicroPython et est exclu de
+cette commande. Les échanges Pushbullet sont remplacés par des réponses locales.
+
+Les adaptateurs sont explicites : `creer_audio(configuration, lire_niveau=...,
+sortie_son=..., ecart=...)`. Le premier rappel fournit une amplitude calculée
+0..65535 (pas un échantillon ADC brut) ; le second reçoit une fréquence en Hz,
+avec 0 pour couper le son. `Boitier.actualiser(..., niveau_sonore=...)` accepte
+aussi directement un niveau simulé. Aucun pilote matériel n’est fourni à cette
+étape ; activer les drapeaux sans adaptateurs donne une erreur explicite.
+
+Les valeurs d’essai et les limites sont dans la
+[spécification](../SPECIFICATION.md#préparation-logicielle-sans-matériel-16-octobre-2026).
+Les seuils, la portée et le volume attendent les composants et le boîtier.
+Les pauses TLS peuvent encore prolonger une note, même si le séquenceur
+n’ajoute lui-même aucune attente. Ajouter `audio.py` lors de toute copie du
+`main.py` actuel dans Wokwi ; `carte/preparer.py` le prépare aussi dans `.deploy`.
+
+Le programme actuel importe aussi `journal.py` : l’ajouter à Wokwi avec les
+autres modules. Ce journal local garde deux générations de 32 Kio et une dernière
+activité en mémoire RTC pour diagnostiquer les resets. Les détails et la commande
+d’export USB sont dans [carte/README.md](../carte/README.md#journal-des-incidents).
