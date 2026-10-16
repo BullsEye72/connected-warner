@@ -12,9 +12,10 @@ try:
     import asyncio
 except ImportError:
     import uasyncio as asyncio
-from pushbullet_reel import maintenant_ms, ecart_ms, charger_certificats, lire_reponse_http
+from pushbullet_reel import (maintenant_ms, ecart_ms, charger_certificats,
+                             lire_reponse_http, decrire_erreur_transport)
 
-VERSION = "MP-20261016-PRESENCE"
+VERSION = "MP-20261016-PRESENCE-DIAG"
 PRESENCE_MS = 600_000
 CALME_MS = 2_000
 
@@ -172,13 +173,16 @@ class TransportHTTPS:
         self.adresse = self.date_dns = None
         self.ttl_ms = 0
         self.pas_max_ms = 0
+        self.etape = "initialisation"
 
     async def envoyer(self, rapport):
         import socket
         import select
         if self.adresse is None or ecart_ms(maintenant_ms(), self.date_dns) >= self.ttl_ms:
+            self.etape = "dns"
             self.adresse, self.ttl_ms = await resoudre(self.hote, self.wlan.ifconfig()[3])
             self.date_dns = maintenant_ms()
+        self.etape = "tcp"
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(False)
         poll = select.poll()
@@ -192,6 +196,7 @@ class TransportHTTPS:
             while not poll.poll(0):
                 await asyncio.sleep(0.01)
             poll.unregister(sock)
+            self.etape = "tls"
             sock = self.tls.wrap_socket(sock, server_hostname=self.hote, do_handshake_on_connect=False)
             sock.setblocking(False)
             contenu = json.dumps(rapport).encode()
@@ -212,6 +217,7 @@ class TransportHTTPS:
                         raise
                 self.pas_max_ms = max(self.pas_max_ms, ecart_ms(maintenant_ms(), debut))
                 await asyncio.sleep(0.01)
+            self.etape = "reponse_http"
             return await lire_reponse_http(LecteurTLS(sock, self))
         finally:
             sock.close()
@@ -274,17 +280,17 @@ class PresenceDashboard:
                 self.suspendu = True
                 self.journal("[DASHBOARD] Configuration refusee (HTTP %d) ; suivi suspendu jusqu'au redemarrage." % statut)
             else:
-                self.echec()
+                self.echec("HTTP %d" % statut)
         except asyncio.CancelledError:
             # Le prochain instantane remplace celui-ci ; aucun etat local n'est change.
             self.reessai_ms = 0
-        except Exception:
-            self.echec()
+        except Exception as erreur:
+            self.echec(decrire_erreur_transport(erreur, getattr(self.transport, "etape", "transport")))
 
-    def echec(self):
+    def echec(self, detail="transport"):
         self.echecs = min(6, self.echecs + 1)
         self.reessai_ms = min(300_000, 15_000 * 2 ** (self.echecs - 1))
-        self.journal("[DASHBOARD] Suivi indisponible ; nouvel essai dans %d s." % (self.reessai_ms // 1000))
+        self.journal("[DASHBOARD] Suivi indisponible (%s) ; nouvel essai dans %d s." % (detail, self.reessai_ms // 1000))
 
     def arreter(self):
         if self.tache is not None:
@@ -299,7 +305,9 @@ def creer_presence(c, boitier, journal_local, journal=print):
         reseau = boitier.reseau
         if not getattr(reseau, "reel", False):
             raise ValueError("Le suivi necessite le profil reel.")
-        return PresenceDashboard(c, boitier, journal_local, TransportHTTPS(c, reseau.wlan), journal)
+        presence = PresenceDashboard(c, boitier, journal_local, TransportHTTPS(c, reseau.wlan), journal)
+        journal("[DASHBOARD] Suivi actif ; transport " + VERSION + ".")
+        return presence
     except Exception:
         journal("[DASHBOARD] Reglages invalides ; suivi desactive, alertes conservees.")
         return None

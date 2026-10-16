@@ -449,3 +449,10 @@ DNS, les corps HTTP, la fermeture des sockets à l'annulation, les priorités,
 la périodicité, les réessais et le refus de clé. Aucune notification réelle n'est
 envoyée par ces tests. Aucun transfert USB ou heartbeat réel n'a encore validé
 cette nouvelle fonction sur la carte.
+
+Le premier essai utilisateur signale des réessais de présence sans détail.
+Le diagnostic `MP-20261016-PRESENCE-DIAG` ajoute l'étape `dns`, `tcp`, `tls` ou
+`reponse_http`, la classe d'exception et les codes numériques autorisés. Une
+réponse serveur indisponible indique son statut, par exemple `HTTP 503`.
+La clé, les en-têtes, le corps HTTP et les textes arbitraires d'exception restent
+exclus des traces. Les seize tests de suivi couvrent aussi cette absence de fuite.

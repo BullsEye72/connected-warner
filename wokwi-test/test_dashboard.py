@@ -200,6 +200,27 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.sent), 1)
         self.assertTrue(self.p.suspendu)
 
+    async def test_diagnostic_http_503_et_phase_reseau_sans_contenu_prive(self):
+        async def unavailable(report):
+            return 503, {}, {"error": "unavailable", "private": "not-logged"}
+        self.transport.envoyer = unavailable
+        await self.tick(2000)
+        self.assertIn("HTTP 503", self.logs[-1])
+        self.assertNotIn("not-logged", "".join(self.logs))
+        self.assertFalse(self.p.suspendu)
+
+    async def test_diagnostic_tls_code_sans_message_arbitraire(self):
+        self.transport.etape = "tls"
+        async def fail(report):
+            raise OSError(-30592, "secret-never-logged CERTIFICATE_VERIFY_FAILED")
+        self.transport.envoyer = fail
+        await self.tick(2000)
+        line = self.logs[-1]
+        self.assertIn("code=-30592", line)
+        self.assertIn("etape=tls", line)
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", line)
+        self.assertNotIn("secret-never-logged", line)
+
     async def test_appui_annule_et_libere_le_transport_sans_attendre(self):
         stopped = asyncio.Event()
         async def hanging(report):
