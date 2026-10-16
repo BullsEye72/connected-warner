@@ -35,7 +35,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           <form action={signInWithGoogle}>
             <SubmitButton pendingText="Ouverture de Google…" className="google-button"><span className="google-letter" aria-hidden="true">G</span> Continuer avec Google</SubmitButton>
           </form>
-          <p className="auth-note">Chaque compte accède uniquement à son propre logement. Aucun mot de passe à créer ici.</p>
+          <p className="auth-note">Ce site est réservé à un seul logement. Le premier compte l’administre ; les suivants attendent son autorisation. Aucun mot de passe à créer ici.</p>
         </>}
         <Link className="text-link" href="/demo">Voir la démonstration <span aria-hidden="true">↗</span></Link>
       </section>

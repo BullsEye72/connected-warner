@@ -2,8 +2,9 @@
 
 Le [dashboard web](dashboard/README.md) est une application Next.js déployable
 sur Vercel avec `dashboard` comme **Root Directory**. L'accès privé utilise
-Google via Supabase ; les logements et boîtiers sont isolés par compte dans
-PostgreSQL. La [configuration Supabase et Google](dashboard/README.md) et les
+Google via Supabase ; une installation héberge un seul logement partagé dans
+PostgreSQL. Le premier compte l'administre ; les suivants attendent son approbation
+pour le consulter. La [configuration Supabase et Google](dashboard/README.md) et les
 migrations SQL sont nécessaires. L'aperçu fictif reste accessible sur `/demo`.
 L'API de présence et le module ESP32 sont prêts : après la deuxième migration,
 créer une clé dans les détails du boîtier, la copier dans le profil privé et

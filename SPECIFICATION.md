@@ -514,6 +514,15 @@ L’absence de signal ne permet pas de distinguer coupure de courant, panne Wi-F
 
 Chaque appareil dispose d’une authentification propre auprès du site. Le dashboard est privé. Les données de suivi ne contiennent ni le jeton Pushbullet ni le mot de passe Wi-Fi. La panne du site laisse fonctionner le chemin direct vers Pushbullet ; elle rend seulement indisponibles le suivi et la détection de mises à jour.
 
+Le 16 octobre, l'utilisateur retient **un seul logement par installation**.
+Toute personne qui redéploie l'outil dispose de son propre hébergement et projet
+Supabase. Le premier compte devient administrateur et crée le logement. Les
+comptes suivants entrent en attente ; l'administrateur les autorise ou les refuse
+depuis le dashboard ou la base. Les comptes autorisés consultent le même logement,
+sans gérer les boîtiers, leurs clés ou les autres accès. Le retrait d'accès bloque
+les prochaines lectures, même avec une session déjà ouverte. Pour la migration
+de l'installation actuelle, le propriétaire du logement conserve l'administration.
+
 Avec deux appareils, la fréquence nominale représente 288 signaux par jour, hors événements supplémentaires. Ces requêtes vers le site ne sont pas des notifications Pushbullet.
 
 Le 16 octobre, l'utilisateur valide la connexion Google au dashboard, la création

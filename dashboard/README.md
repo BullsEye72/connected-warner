@@ -1,8 +1,9 @@
 ﻿# Dashboard Connected Warner
 
 Application Next.js hébergée sur Vercel, avec connexion Google via Supabase
-(OAuth / PKCE) et base PostgreSQL. Chaque compte accède à son propre logement.
-Le tableau privé permet de créer le logement et d'enregistrer ses boîtiers.
+(OAuth / PKCE) et base PostgreSQL. **Une installation héberge un seul logement**,
+partagé avec les comptes autorisés par son administrateur. Chaque personne qui
+déploie l'outil utilise son propre projet Vercel et sa propre instance Supabase.
 La démonstration publique est conservée sur `/demo`.
 
 ## Variables Vercel
@@ -28,26 +29,33 @@ ou une clé `service_role`. Le code refuse les clés de service à cet emplaceme
 
 ## 1. Préparer la base
 
-Dans le **SQL Editor** du projet Supabase, exécuter une seule fois le fichier
-[supabase/migrations/202610160001_dashboard.sql](supabase/migrations/202610160001_dashboard.sql).
-Les migrations suivantes seront des fichiers supplémentaires ; ne pas réexécuter
-cette migration initiale sur des tables déjà créées.
+Dans le **SQL Editor** du projet Supabase, exécuter les migrations une seule fois,
+dans l'ordre. Sur une installation existante, appliquer uniquement les fichiers
+qui n'ont pas encore été exécutés :
+
+1. [202610160001_dashboard.sql](supabase/migrations/202610160001_dashboard.sql)
+2. [202610160002_device_presence.sql](supabase/migrations/202610160002_device_presence.sql)
+3. [202610160003_single_household_access.sql](supabase/migrations/202610160003_single_household_access.sql)
 
 Les tables sont :
 
-- `households` : un logement par compte propriétaire ;
+- `households` : le logement unique de cette installation ;
 - `devices` : noms, emplacements et derniers états reçus ;
-- `device_events` : structure préparée pour les futurs événements des cartes.
+- `device_events` : événements reçus des cartes ;
+- `dashboard_members` : comptes, adresses e-mail et décisions d'accès.
 
-Pour raccorder les cartes, exécuter ensuite la **nouvelle** migration
-[202610160002_device_presence.sql](supabase/migrations/202610160002_device_presence.sql).
-Elle conserve les logements et boîtiers existants. Ne pas réexécuter la première
-migration : les deux fichiers s'appliquent une seule fois, dans cet ordre.
+Les migrations 002 et 003 conservent le logement, les boîtiers et leurs clés.
+La 003 conserve comme administrateur le propriétaire du logement existant.
+Sans logement existant, elle retient le plus ancien compte ; sans aucun compte,
+le premier inscrit devient administrateur automatiquement. Un verrou de ligne
+sérialise les inscriptions pour ne désigner qu'un seul administrateur.
+Si plusieurs logements existent déjà, la migration s'arrête sans supprimer de
+données : il faut d'abord choisir le logement à conserver.
 
-Les règles RLS empêchent un compte de lire ou modifier le logement d'un autre.
-Les clients anonymes n'ont aucun accès aux tables. Un utilisateur peut créer
-et renommer ses boîtiers, mais ne peut pas écrire une fausse présence, une
-confirmation ou un événement via l'API publique.
+Les règles RLS bloquent les comptes en attente ou refusés et les clients
+anonymes. Les membres approuvés consultent le même logement et ses boîtiers.
+Seul l'administrateur configure les boîtiers, génère leurs clés et gère les accès.
+Aucun compte humain ne peut fabriquer une présence ou un événement via les tables.
 
 ## 2. Activer la connexion Google
 
@@ -75,9 +83,10 @@ Il y a deux retours distincts : Google renvoie vers Supabase (`/auth/v1/callback
 puis Supabase renvoie vers le dashboard (`/auth/callback`).
 
 La connexion Google peut créer le compte Supabase au premier passage si les
-inscriptions sont autorisées. Chaque nouveau compte obtient un espace vide,
-sans accès aux boîtiers existants d'un autre compte. Le partage d'un logement
-entre proches n'est pas encore implémenté.
+inscriptions sont autorisées. Après le premier administrateur, chaque nouveau
+compte entre automatiquement dans la liste d'attente. Laisser les inscriptions
+ouvertes pour permettre aux proches de demander leur accès. Les restrictions
+Google Testing restent applicables avant cette étape.
 
 Documentation : [Google avec Supabase](https://supabase.com/docs/guides/auth/social-login/auth-google),
 [sessions Next.js](https://supabase.com/docs/guides/auth/server-side/creating-a-client).
@@ -88,9 +97,39 @@ Ouvrir `/` : un visiteur est redirigé vers `/login`. Cliquer **Continuer avec
 Google**, choisir son compte, puis créer le logement. Enregistrer un boîtier :
 il doit afficher **Jamais vu**, sans présence ou état inventés.
 
-Tester la déconnexion et la reconnexion. Avec un second compte, le logement et
-les boîtiers du premier ne doivent pas apparaître. `/demo` reste public et
-n'affiche que des données fictives.
+Tester la déconnexion et la reconnexion. Avec un second compte, seul l'écran
+**Demande en attente** doit apparaître. Depuis le premier compte, utiliser
+**Accès au logement → Autoriser** : le second compte voit alors le même logement,
+sans boutons d'administration. Tester **Refuser**, **Retirer l'accès** et une
+nouvelle autorisation. Le retrait bloque les prochaines lectures en base même
+avec une session déjà ouverte ; les données déjà affichées ne peuvent pas être
+effacées à distance. Le site se rafraîchit chaque minute ou à la reprise du focus.
+`/demo` reste public et n'affiche que des données fictives.
+
+## Gérer les accès
+
+Dans le dashboard administrateur, **Accès au logement** liste les adresses
+Google en attente, autorisées et refusées. Les membres ne voient que leur propre
+statut, jamais la liste des autres comptes. Un refus persiste aux reconnexions.
+L'administrateur ne peut pas retirer son propre accès depuis cette interface.
+
+La validation peut aussi se faire dans le SQL Editor Supabase :
+
+```sql
+select user_id, email, status from public.dashboard_members order by created_at;
+
+-- Remplacer par l'adresse exacte relevee dans la liste.
+update public.dashboard_members
+set status = 'approved', updated_at = now()
+where email = 'proche@example.com';
+-- Utiliser 'rejected' pour refuser ou retirer un acces.
+```
+
+Les clients publics ne disposent d'aucun droit d'écriture sur cette table ;
+l'interface utilise une fonction SQL qui vérifie l'administrateur. Aucun rôle
+n'est déduit de métadonnées Google modifiables par le client. Le compte
+administrateur est protégé contre la suppression accidentelle par une référence
+en base ; son transfert n'est pas proposé dans cette version.
 
 Sans variables valides, la connexion indique que la préparation est en cours.
 Si la migration manque, un utilisateur connecté voit un message d'indisponibilité
@@ -119,8 +158,9 @@ npm test
 npm run build
 ```
 
-Les tests utilisent PostgreSQL embarqué (PGlite), avec deux comptes fictifs,
-pour appliquer la vraie migration et vérifier RLS, les privilèges de colonnes,
+Les tests utilisent PostgreSQL embarqué (PGlite), avec plusieurs comptes fictifs,
+pour appliquer les trois vraies migrations et vérifier le premier administrateur,
+l'attente, l'approbation, la révocation, RLS, les privilèges de colonnes,
 l'absence d'accès anonyme et l'impossibilité de fabriquer la télémétrie.
 Ils ne touchent pas au projet Supabase distant ni à Google.
 
@@ -165,10 +205,11 @@ authentifiée `set_device_key`. L'ancienne clé cesse immédiatement de fonction
 Le compteur affiché correspond aux redémarrages observés depuis le raccordement,
 pas au total de redémarrages physiques de la carte depuis sa fabrication.
 
-Les 16 tests du dashboard appliquent les migrations à PostgreSQL embarqué et
-vérifient l'isolation, la rotation des clés, l'ordre, les doublons, la validation
-et les événements. Un parcours HTTP local simulé vérifie aussi formulaire de
-clé, API et affichage de la présence. Aucun compte ou boîtier réel n'est utilisé
+Les 24 tests du dashboard appliquent les migrations à PostgreSQL embarqué et
+vérifient les accès au logement partagé, la rotation des clés, l'ordre, les doublons,
+la validation et les événements. Un parcours HTTP local vérifie aussi la connexion,
+l'attente, l'approbation, la consultation sans administration, la révocation et
+l'absence d'accès si la migration manque, avec Supabase simulé. Aucun compte ou boîtier réel n'est utilisé
 par ces tests. Le 16 octobre, la carte ESP32 réelle transmet sa première présence
 avec HTTP 200, après correction de la reconnaissance du code TCP `EINPROGRESS`.
 

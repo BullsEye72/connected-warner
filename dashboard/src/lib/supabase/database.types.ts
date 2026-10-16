@@ -30,9 +30,23 @@ export type DeviceEvent = {
   request_id: string | null;
 };
 
+export type DashboardMember = {
+  user_id: string;
+  email: string | null;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
+      dashboard_members: {
+        Row: DashboardMember;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       households: {
         Row: Household;
         Insert: { id?: string; owner_id: string; name: string; created_at?: string };
@@ -54,6 +68,10 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      is_dashboard_admin: { Args: Record<string, never>; Returns: boolean };
+      has_dashboard_access: { Args: Record<string, never>; Returns: boolean };
+      create_shared_household: { Args: { p_name: string }; Returns: undefined };
+      set_dashboard_access: { Args: { p_user_id: string; p_status: "approved" | "rejected" }; Returns: undefined };
       set_device_key: { Args: { p_device_id: string; p_token_hash: string }; Returns: undefined };
       ingest_device_report: { Args: { p_device_id: string; p_token: string; p_report: import("../device-report").DeviceReport }; Returns: { status: "accepted" | "obsolete" | "unauthorized" | "invalid" | "rate_limited" } };
     };

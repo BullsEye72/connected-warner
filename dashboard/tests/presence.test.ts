@@ -31,18 +31,19 @@ async function ageReceipt() {
 before(async () => {
   await db.exec(`
     create role anon; create role authenticated; create role service_role bypassrls;
-    create schema auth; create table auth.users(id uuid primary key);
+    create schema auth; create table auth.users(id uuid primary key, email text, created_at timestamptz default now());
     create function auth.uid() returns uuid language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     grant usage on schema auth to anon,authenticated;
     grant execute on function auth.uid() to anon,authenticated;
-    insert into auth.users values ('${alice}'),('${bob}');
+    insert into auth.users(id) values ('${alice}'),('${bob}');
   `);
   for (const name of ["202610160001_dashboard.sql", "202610160002_device_presence.sql"]) {
     await db.exec(await readFile(new URL("../supabase/migrations/" + name, import.meta.url), "utf8"));
   }
   await db.query("insert into public.households(id,owner_id,name) values ($1,$2,'Home')", [device, alice]);
   await db.query("insert into public.devices(id,household_id,name) values ($1,$1,'Device')", [device]);
+  await db.exec(await readFile(new URL("../supabase/migrations/202610160003_single_household_access.sql", import.meta.url), "utf8"));
 });
 after(async () => { await db.close(); });
 
