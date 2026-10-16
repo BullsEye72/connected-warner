@@ -474,15 +474,34 @@ h1>span {
   margin:0 6px;
 }
 .device-state {
-  background:#f7f8f3;
-  border:1px solid #e9ece2;
+  --state-bg:#f1f3ef;
+  --state-border:#dce1d7;
+  --state-color:#52604d;
+  background:var(--state-bg);
+  border:1px solid var(--state-border);
+  color:var(--state-color);
   border-radius:6px;
   padding:13px;
+}
+.device-state[data-state="repos"] {
+  --state-bg:#edf4ff;
+  --state-border:#ccdcef;
+  --state-color:#244e7a;
+}
+.device-state[data-state="en_attente"] {
+  --state-bg:#fdeced;
+  --state-border:#efc9cd;
+  --state-color:#902e38;
+}
+.device-state[data-state="confirmee"] {
+  --state-bg:#eaf5ed;
+  --state-border:#c7e1ce;
+  --state-color:#245d38;
 }
 .device-state>span {
   display:block;
   font-size:10px;
-  color:#939c89;
+  color:inherit;
   margin-bottom:8px;
 }
 .device-state strong {
@@ -497,7 +516,7 @@ h1>span {
   display:inline-block;
   width:7px;
   height:7px;
-  background:#7d98bb;
+  background:currentColor;
   border-radius:50%;
   flex-shrink:0;
 }

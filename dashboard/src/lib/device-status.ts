@@ -11,6 +11,7 @@ export type DisplayDevice = {
   lastSeen: string;
   seenDate: string | null;
   state: string;
+  stateKind: Device["request_state"];
   wifi: string;
   uptime: string;
   version: string;
@@ -60,6 +61,7 @@ export function displayDevice(device: Device, now: number): DisplayDevice {
     tone: presence === "recent" ? "green" : presence === "late" ? "amber" : "neutral",
     lastSeen: formatSeen(device.last_seen_at, now), seenDate: device.last_seen_at,
     state: device.last_seen_at ? states[device.request_state] : states.inconnu,
+    stateKind: device.last_seen_at ? device.request_state : "inconnu",
     wifi: device.wifi_rssi === null ? "Non reçu" : `${device.wifi_rssi} dBm`,
     uptime: uptime === null ? "Non reçue" : `${Math.floor(uptime / 86400)} j ${Math.floor(uptime % 86400 / 3600)} h`,
     version: device.firmware_version || "Non reçue", micropython: device.micropython_version || "Non reçue",
