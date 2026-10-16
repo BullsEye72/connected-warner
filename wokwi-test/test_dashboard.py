@@ -69,7 +69,7 @@ class FakeTCP(FakeSocket):
         assert value is False
     def connect(self, address):
         self.address = address
-        raise OSError(115)
+        raise OSError(d.errno.EINPROGRESS)
     def write(self, data):
         self.sent += bytes(data)
         return len(data)
@@ -99,6 +99,11 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(b"POST /api/devices/", sock.sent)
         self.assertIn(b"Authorization: Bearer cw_", sock.sent)
         self.assertNotIn(b"Pushbullet", sock.sent)
+
+    async def test_connexion_non_bloquante_code_esp32(self):
+        # Simule le code fourni par errno sur l'ESP32 plutot que celui du PC.
+        with patch.object(d.errno, "EINPROGRESS", 119):
+            await self.test_transport_tls_sni_verifie_et_fermeture_socket()
 
     async def test_annulation_connexion_ferme_le_socket_meme_avant_tls(self):
         sock = FakeTCP()

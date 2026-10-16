@@ -8,6 +8,7 @@ import os
 import time
 import struct
 import binascii
+import errno
 try:
     import asyncio
 except ImportError:
@@ -15,7 +16,7 @@ except ImportError:
 from pushbullet_reel import (maintenant_ms, ecart_ms, charger_certificats,
                              lire_reponse_http, decrire_erreur_transport)
 
-VERSION = "MP-20261016-PRESENCE-DIAG"
+VERSION = "MP-20261016-PRESENCE-TCP"
 PRESENCE_MS = 600_000
 CALME_MS = 2_000
 
@@ -190,7 +191,10 @@ class TransportHTTPS:
             try:
                 sock.connect((self.adresse, 443))
             except OSError as erreur:
-                if erreur.args[0] not in (11, 36, 115, 10035, 10036):
+                # Les numeros varient selon le port : EINPROGRESS vaut 119
+                # sur cet ESP32, au lieu de 115 sur les essais PC Linux.
+                if erreur.args[0] not in (errno.EINPROGRESS, errno.EALREADY, errno.EAGAIN,
+                                         getattr(errno, "EWOULDBLOCK", errno.EAGAIN)):
                     raise
             poll.register(sock, select.POLLOUT | select.POLLERR | select.POLLHUP)
             while not poll.poll(0):

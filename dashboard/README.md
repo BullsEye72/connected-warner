@@ -169,7 +169,8 @@ Les 16 tests du dashboard appliquent les migrations à PostgreSQL embarqué et
 vérifient l'isolation, la rotation des clés, l'ordre, les doublons, la validation
 et les événements. Un parcours HTTP local simulé vérifie aussi formulaire de
 clé, API et affichage de la présence. Aucun compte ou boîtier réel n'est utilisé
-par ces tests. Le premier aller-retour sur ESP32 reste à valider.
+par ces tests. Le 16 octobre, la carte ESP32 réelle transmet sa première présence
+avec HTTP 200, après correction de la reconnaissance du code TCP `EINPROGRESS`.
 
 Le tableau actualise ses lectures chaque minute lorsqu'il est visible. Les
 seuils de 15 et 30 minutes restent provisoires, comme dans la spécification.

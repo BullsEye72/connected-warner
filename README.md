@@ -7,7 +7,8 @@ PostgreSQL. La [configuration Supabase et Google](dashboard/README.md) et les
 migrations SQL sont nécessaires. L'aperçu fictif reste accessible sur `/demo`.
 L'API de présence et le module ESP32 sont prêts : après la deuxième migration,
 créer une clé dans les détails du boîtier, la copier dans le profil privé et
-transférer le programme. Le premier aller-retour matériel reste à valider.
+transférer le programme. Le 16 octobre, le boîtier réel transmet sa première
+présence avec une réponse HTTP 200 après correction de la connexion TCP ESP32.
 
 Le panier retenu et le matériel disponible sont recensés dans [MATERIEL.md](MATERIEL.md).
 

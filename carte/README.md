@@ -439,20 +439,30 @@ suspend le suivi jusqu'au redémarrage, sans retirer l'état local du bouton.
 
 La console `[DASHBOARD DIAGNOSTIC]` signale les pas TLS d'au moins 50 ms. Les
 opérations cryptographiques restent du calcul partagé avec les boutons : les
-essais PC ne garantissent pas le temps de réponse sur ESP32. Le premier essai
-physique doit vérifier la présence reçue, un appui pendant HTTPS, la priorité de
-Pushbullet, une coupure Wi-Fi et le retour après reconnexion. Les certificats
+essais PC ne garantissent pas le temps de réponse sur ESP32. Les essais physiques
+restants concernent un appui pendant HTTPS, la priorité de Pushbullet, une coupure
+Wi-Fi et le retour après reconnexion. Les certificats
 fournis ont été vérifiés depuis le PC pour Vercel, sans clé d'appareil.
 
-Les 14 tests `test_dashboard` couvrent la configuration, le contenu limité, le
+Les 17 tests `test_dashboard` couvrent la configuration, le contenu limité, le
 DNS, les corps HTTP, la fermeture des sockets à l'annulation, les priorités,
 la périodicité, les réessais et le refus de clé. Aucune notification réelle n'est
-envoyée par ces tests. Aucun transfert USB ou heartbeat réel n'a encore validé
-cette nouvelle fonction sur la carte.
+envoyée par ces tests. La suite PC complète comprend 275 tests réussis.
 
 Le premier essai utilisateur signale des réessais de présence sans détail.
 Le diagnostic `MP-20261016-PRESENCE-DIAG` ajoute l'étape `dns`, `tcp`, `tls` ou
 `reponse_http`, la classe d'exception et les codes numériques autorisés. Une
 réponse serveur indisponible indique son statut, par exemple `HTTP 503`.
 La clé, les en-têtes, le corps HTTP et les textes arbitraires d'exception restent
-exclus des traces. Les seize tests de suivi couvrent aussi cette absence de fuite.
+exclus des traces. Les tests de suivi couvrent aussi cette absence de fuite.
+
+Le 16 octobre, le transfert USB du diagnostic révèle `OSError`, code `119`,
+à l'étape `tcp`. La liste numérique prévue pour la connexion non bloquante
+ne reconnaissait pas `EINPROGRESS` sur cet ESP32. Le module
+`MP-20261016-PRESENCE-TCP` utilise les constantes `errno` du port ; voir la
+[documentation MicroPython](https://docs.micropython.org/en/v1.29.0/library/errno.html).
+Après transfert de ce seul module et redémarrage au repos, la carte transmet
+sa présence réelle avec `HTTP 200`. Aucune demande d'aide n'est déclenchée.
+Le plus long pas TLS observé pendant cet envoi est de **275 ms** ; cette mesure
+ne valide pas encore l'appui pendant HTTPS, la priorité Pushbullet ou la
+reconnexion du suivi après une coupure Wi-Fi.

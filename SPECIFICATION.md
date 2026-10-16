@@ -524,8 +524,9 @@ une table privée. Réceptions datées côté serveur, séquences, sessions de d
 rotation et refus des anciens rapports sont testés. Le suivi est désactivé par
 défaut, puis activable dans le profil privé après application de la migration.
 Il s'interrompt pour les gestes et communications Pushbullet ; ses réessais sont
-espacés. Les tests PC ne prouvent pas la latence TLS sur ESP32 : le premier
-aller-retour matériel et un appui pendant HTTPS restent à valider. Les changements
+espacés. Le premier aller-retour matériel reçoit HTTP 200 le 16 octobre après
+correction du code TCP `EINPROGRESS` propre au port ESP32. Le plus long pas TLS
+observé est de 275 ms ; un appui pendant HTTPS reste à valider. Les changements
 hors réseau sont regroupés sur le dernier état, sans garantie d'historique exhaustif.
 
 ## Annulation par maintien du bouton pendant dix secondes

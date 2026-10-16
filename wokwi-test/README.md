@@ -242,7 +242,7 @@ de temps. Ils vérifient aussi le cycle d’aide, l’annulation dès le premier
 après des cris, le bip local sans Wi-Fi, le motif distinct après `OK` et l’absence
 de nouvelles demandes pendant l’attente ou les bips.
 
-Pour la suite complète de tests PC (272 tests au 16 octobre, suivi web inclus) :
+Pour la suite complète de tests PC (275 tests au 16 octobre, suivi web inclus) :
 
 ```powershell
 python -B -m unittest test_audio test_journal test_machine_etats test_reseau_simule test_pushbullet_reel test_config_wifi test_contacts test_wifi_et_voyants test_dashboard
