@@ -658,6 +658,13 @@ async def boucle_principale():
         qualite_wifi = SurveillanceWiFi(network.WLAN(network.STA_IF), bool(configuration.SSID),
                                        getattr(configuration, "SEUIL_WIFI_FAIBLE_DBM", -75))
         boitier.qualite_wifi = qualite_wifi
+    presence = None
+    if getattr(configuration, "DASHBOARD_ACTIF", False):
+        try:
+            from dashboard import creer_presence
+            presence = creer_presence(configuration, boitier, journal_local)
+        except Exception:
+            print("[DASHBOARD] Module indisponible ; suivi desactive, alertes conservees.")
     print("AIDE : GPIO%d ; VALIDATION : GPIO%d. Autres contacts vers GND." % (
         GPIO_AIDE, GPIO_VALIDATION))
     print("Relances de test : %d ms, %d envois maximum par contact." % (
@@ -697,11 +704,19 @@ async def boucle_principale():
             if qualite_wifi is not None and not getattr(reseau, "reel", False):
                 # Sur carte, les envois fictifs attendent aussi le vrai Wi-Fi.
                 wifi_disponible = qualite_wifi.connecte and wifi_disponible is not False
-            boitier.actualiser(maintenant, aide.lire(maintenant),
+            aide_lue = aide.lire(maintenant)
+            boitier.actualiser(maintenant, aide_lue,
                                validation.lire(maintenant) if validation is not None else False,
                                wifi_disponible,
                                pushbullet_test.lire(maintenant) if pushbullet_test is not None else None)
             voyant.afficher_etat(boitier, maintenant)
+            if presence is not None:
+                try:
+                    presence.actualiser(maintenant, aide_lue)
+                except Exception:
+                    presence.arreter()
+                    presence = None
+                    print("[DASHBOARD] Suivi arrete apres erreur locale ; alertes conservees.")
             if ecart_ms(maintenant, dernier_diagnostic) >= 30_000:
                 dernier_diagnostic = maintenant
                 journal_local.point(etat=boitier.etat)
@@ -711,6 +726,8 @@ async def boucle_principale():
                     print("[WIFI DIAGNOSTIC] etat=%s ; RSSI=%s" % (qualite_wifi.etat(), qualite_wifi.rssi))
             await asyncio.sleep(0.005)
     finally:
+        if presence is not None:
+            presence.arreter()
         if audio is not None:
             audio.arreter(time.ticks_ms())
         if tache_wifi is not None:

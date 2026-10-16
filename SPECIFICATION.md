@@ -516,6 +516,18 @@ Chaque appareil dispose d’une authentification propre auprès du site. Le dash
 
 Avec deux appareils, la fréquence nominale représente 288 signaux par jour, hors événements supplémentaires. Ces requêtes vers le site ne sont pas des notifications Pushbullet.
 
+Le 16 octobre, l'utilisateur valide la connexion Google au dashboard, la création
+du logement et l'ajout du premier boîtier. L'API de présence, une seconde migration
+Supabase et le module embarqué `dashboard.py` sont préparés. La clé par appareil
+est créée depuis les détails du boîtier ; son empreinte seule est conservée dans
+une table privée. Réceptions datées côté serveur, séquences, sessions de démarrage,
+rotation et refus des anciens rapports sont testés. Le suivi est désactivé par
+défaut, puis activable dans le profil privé après application de la migration.
+Il s'interrompt pour les gestes et communications Pushbullet ; ses réessais sont
+espacés. Les tests PC ne prouvent pas la latence TLS sur ESP32 : le premier
+aller-retour matériel et un appui pendant HTTPS restent à valider. Les changements
+hors réseau sont regroupés sur le dernier état, sans garantie d'historique exhaustif.
+
 ## Annulation par maintien du bouton pendant dix secondes
 
 **Exigence retenue :** un appui continu de **dix secondes** permet d’annuler une demande en annonçant aux proches : **« Tout compte fait, tout va bien. »**

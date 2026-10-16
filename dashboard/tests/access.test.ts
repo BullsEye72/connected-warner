@@ -29,6 +29,7 @@ before(async () => {
   `);
   const migration = await readFile(new URL("../supabase/migrations/202610160001_dashboard.sql", import.meta.url), "utf8");
   await db.exec(migration);
+  await db.exec(await readFile(new URL("../supabase/migrations/202610160002_device_presence.sql", import.meta.url), "utf8"));
   await asUser(alice);
   const result = await db.query<{ id: string }>("insert into public.households(owner_id,name) values ($1,'Chez Alice') returning id", [alice]);
   household = result.rows[0].id;

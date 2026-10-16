@@ -22,8 +22,8 @@ au simulateur et à la carte. Le profil physique est séparé de celui de Wokwi.
 1. Pour personnaliser les réglages, copier `configuration_exemple.py` en
    `configuration_privee.py` dans ce dossier. Ce fichier privé est ignoré par Git.
 2. Depuis la racine du projet, exécuter `python carte/preparer.py`.
-   Les neuf fichiers nécessaires sont préparés dans `.deploy/`, ignoré par Git,
-   dont les modules `contacts.py`, `audio.py` et `journal.py`.
+   Les dix fichiers nécessaires sont préparés dans `.deploy/`, ignoré par Git,
+   dont les modules `contacts.py`, `audio.py`, `journal.py` et `dashboard.py`.
 3. Dans MicroPico, sélectionner COM4 puis utiliser le transfert du projet.
    `micropico.syncFolder` vise `.deploy` : les tests et documents restent sur le PC.
    Dans la palette `Ctrl+Shift+P`, choisir `MicroPico: Connect`, puis
@@ -161,7 +161,7 @@ et l’accès au portail après relâchement.
 
 Les identifiants sont dans `wifi.json` sur la carte, la clé du réseau d’installation
 dans `wifi_installation.json`. Ces fichiers sont ignorés par Git et ne sont jamais
-remplacés par le transfert des neuf fichiers de programme. Le mot de passe du
+remplacés par le transfert des dix fichiers de programme. Le mot de passe du
 Wi-Fi domestique n’est ni réaffiché dans la page, ni journalisé. Le serveur n’écoute
 que sur l’adresse du réseau d’installation et ce réseau est éteint en fonctionnement
 normal. `PORTAIL_WIFI_ACTIF = False` désactive ce mode et sa fenêtre de démarrage.
@@ -409,3 +409,43 @@ drapeaux seuls : des adaptateurs matériels validés restent nécessaires.
 Les 246 tests PC passent, dont 25 nouveaux tests sonores ; cela ne valide pas
 encore le microphone ou le speaker physiques. Voir les
 [essais sans matériel](../wokwi-test/README.md#préparation-sonore-sans-matériel-16-octobre-2026).
+
+## Présence sur le dashboard
+
+Le module `dashboard.py` est inclus dans la préparation MicroPico. Il est
+inactif si `DASHBOARD_ACTIF` est absent ou faux : le profil privé existant ne
+change pas tout seul. Le [guide du dashboard](../dashboard/README.md#raccorder-le-boîtier-existant)
+décrit la deuxième migration SQL et la création de la clé du boîtier.
+
+Copier les quatre lignes affichées lors de la création de clé dans le profil
+privé, sans modifier les paramètres Pushbullet ou Wi-Fi, puis repréparer et
+transférer les dix fichiers. Aucun nouveau GPIO n'est utilisé. Le suivi n'est
+activé qu'en mode réel, après synchronisation de l'horloge pour valider TLS.
+
+Les instantanés comprennent l'identifiant de session aléatoire, une séquence,
+le dernier état de demande, la durée de fonctionnement, les versions et le RSSI.
+Une annulation reste identifiée comme telle malgré le retour immédiat du voyant
+au repos. Le démarrage, un changement et la périodicité de dix minutes déclenchent
+un essai après deux secondes de calme. Les changements hors réseau sont regroupés
+sur le dernier état ; l'historique du site n'est donc pas un journal exhaustif.
+
+Le DNS utilise des requêtes UDP non bloquantes vers le DNS de la box et un cache
+borné à cinq minutes. TCP/TLS utilisent des sockets non bloquants, le nom du site
+pour SNI et des certificats obligatoires. Un essai est borné à huit secondes.
+Un appui, un maintien, une annulation à transmettre ou une communication
+Pushbullet annule l'essai de suivi et ferme son socket. Une panne du site entraîne
+un réessai espacé de 15 secondes à cinq minutes. Un refus de configuration/clé
+suspend le suivi jusqu'au redémarrage, sans retirer l'état local du bouton.
+
+La console `[DASHBOARD DIAGNOSTIC]` signale les pas TLS d'au moins 50 ms. Les
+opérations cryptographiques restent du calcul partagé avec les boutons : les
+essais PC ne garantissent pas le temps de réponse sur ESP32. Le premier essai
+physique doit vérifier la présence reçue, un appui pendant HTTPS, la priorité de
+Pushbullet, une coupure Wi-Fi et le retour après reconnexion. Les certificats
+fournis ont été vérifiés depuis le PC pour Vercel, sans clé d'appareil.
+
+Les 14 tests `test_dashboard` couvrent la configuration, le contenu limité, le
+DNS, les corps HTTP, la fermeture des sockets à l'annulation, les priorités,
+la périodicité, les réessais et le refus de clé. Aucune notification réelle n'est
+envoyée par ces tests. Aucun transfert USB ou heartbeat réel n'a encore validé
+cette nouvelle fonction sur la carte.

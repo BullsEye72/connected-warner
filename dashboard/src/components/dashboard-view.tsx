@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Brand } from "./brand";
 import { SubmitButton } from "./submit-button";
 import { Refresh } from "./refresh";
+import { DeviceKey } from "./device-key";
 import { signOut } from "@/app/auth/actions";
 import type { DisplayDevice } from "@/lib/device-status";
 
@@ -48,7 +49,7 @@ export function DashboardView({ householdName, devices, email, demo = false, chi
                 <h3>{device.name}</h3><p className="device-place">{device.location} <span>·</span> <span title={device.id}>{device.id.slice(0, 8)}</span></p>
                 <div className="device-state"><span>Dernier état connu</span><strong><span className="state-dot" />{device.state}</strong></div>
                 <dl className="device-info"><div><dt>Dernière présence</dt><dd>{device.seenDate ? <time dateTime={device.seenDate}>{device.lastSeen}</time> : device.lastSeen}</dd></div><div><dt>Signal Wi-Fi reçu</dt><dd>{device.wifi}</dd></div></dl>
-                <details><summary>Détails du boîtier <span aria-hidden="true">＋</span></summary><dl className="detail-info"><div><dt>Identifiant</dt><dd className="device-id">{device.id}</dd></div><div><dt>Version du programme</dt><dd>{device.version}</dd></div><div><dt>MicroPython</dt><dd>{device.micropython}</dd></div><div><dt>Durée de fonctionnement reçue</dt><dd>{device.uptime}</dd></div><div><dt>Nombre de redémarrages reçu</dt><dd>{device.reboots}</dd></div></dl><p>{device.note}</p>{device.lastError && <p className="form-error">Dernière erreur reçue : {device.lastError}</p>}</details>
+                <details><summary>Détails du boîtier <span aria-hidden="true">＋</span></summary><dl className="detail-info"><div><dt>Identifiant</dt><dd className="device-id">{device.id}</dd></div><div><dt>Version du programme</dt><dd>{device.version}</dd></div><div><dt>MicroPython</dt><dd>{device.micropython}</dd></div><div><dt>Durée de fonctionnement reçue</dt><dd>{device.uptime}</dd></div><div><dt>Redémarrages observés par le site</dt><dd>{device.reboots}</dd></div></dl><p>{device.note}</p>{device.lastError && <p className="form-error">Dernière erreur reçue : {device.lastError}</p>}{!demo && <DeviceKey id={device.id} />}</details>
               </article>
             ))}</div>
             {children}

@@ -7,7 +7,7 @@ export default function Demo() {
   const common: Device = {
     id: "DEMO-01", household_id: "demo", name: "Lit", location: "Chambre",
     created_at: new Date(now).toISOString(), last_seen_at: new Date(now - 2 * 60_000).toISOString(),
-    request_state: "repos", firmware_version: "Démo 0.2", micropython_version: "Démo",
+    request_state: "repos", request_id: null, firmware_version: "Démo 0.2", micropython_version: "Démo",
     wifi_rssi: -58, uptime_seconds: 187200, reboot_count: 1, last_error: null,
   };
   const devices = [common, {

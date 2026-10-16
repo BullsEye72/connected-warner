@@ -7,7 +7,7 @@ def preparer():
     racine = Path(__file__).resolve().parent.parent
     destination = racine / ".deploy"
     destination.mkdir(exist_ok=True)
-    for nom in ("main.py", "audio.py", "journal.py", "pushbullet_reel.py", "certificats.py", "ca.pem", "config_wifi.py", "contacts.py"):
+    for nom in ("main.py", "audio.py", "journal.py", "dashboard.py", "pushbullet_reel.py", "certificats.py", "ca.pem", "config_wifi.py", "contacts.py"):
         shutil.copyfile(racine / "wokwi-test" / nom, destination / nom)
     profil = racine / "carte" / "configuration_privee.py"
     if not profil.exists():

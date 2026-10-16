@@ -3,8 +3,23 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createHash, randomBytes } from "node:crypto";
+import { getSiteUrl } from "@/lib/supabase/config";
+import { DEVICE_ID } from "@/lib/device-report";
 
 export type FormState = { error: string };
+export type PairState = { error: string; configuration: string };
+
+export async function generateDeviceKey(_state: PairState, form: FormData): Promise<PairState> {
+  const id = text(form, "device_id");
+  if (!DEVICE_ID.test(id)) return { error: "Boîtier invalide.", configuration: "" };
+  const { supabase } = await authenticatedClient();
+  const token = `cw_${randomBytes(32).toString("base64url")}`;
+  const hash = createHash("sha256").update(token).digest("hex");
+  const { error } = await supabase.rpc("set_device_key", { p_device_id: id, p_token_hash: hash });
+  if (error) return { error: "La clé n’a pas pu être créée. Vérifiez que la migration de présence a été exécutée.", configuration: "" };
+  return { error: "", configuration: `DASHBOARD_ACTIF = True\nDASHBOARD_URL = ${JSON.stringify(getSiteUrl())}\nDASHBOARD_APPAREIL_ID = ${JSON.stringify(id)}\nDASHBOARD_CLE = ${JSON.stringify(token)}` };
+}
 
 async function authenticatedClient() {
   const supabase = await createClient();

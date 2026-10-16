@@ -36,7 +36,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   return (
     <DashboardView householdName={household.name} devices={(devices ?? []).map(device => displayDevice(device, now))} email={auth.user.email}>
       {pageError === "deconnexion" && <p className="form-error" role="alert">La déconnexion n’a pas abouti. Réessayez.</p>}
-      <details className="add-device"><summary>Ajouter un boîtier <span aria-hidden="true">＋</span></summary><p>Enregistrez le boîtier ici pour préparer son raccordement. Aucun signal réel n’est encore collecté par cette version.</p><RegistrationForm kind="device" /></details>
+      <details className="add-device"><summary>Ajouter un boîtier <span aria-hidden="true">＋</span></summary><p>Enregistrez le boîtier, puis ouvrez ses détails pour créer sa clé de connexion.</p><RegistrationForm kind="device" /></details>
     </DashboardView>
   );
 }

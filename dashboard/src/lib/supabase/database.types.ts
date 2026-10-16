@@ -13,6 +13,7 @@ export type Device = {
   created_at: string;
   last_seen_at: string | null;
   request_state: "inconnu" | "repos" | "en_attente" | "confirmee" | "annulee";
+  request_id: string | null;
   firmware_version: string | null;
   micropython_version: string | null;
   wifi_rssi: number | null;
@@ -52,7 +53,10 @@ export type Database = {
       };
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      set_device_key: { Args: { p_device_id: string; p_token_hash: string }; Returns: undefined };
+      ingest_device_report: { Args: { p_device_id: string; p_token: string; p_report: import("../device-report").DeviceReport }; Returns: { status: "accepted" | "obsolete" | "unauthorized" | "invalid" | "rate_limited" } };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };

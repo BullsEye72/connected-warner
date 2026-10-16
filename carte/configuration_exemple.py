@@ -42,3 +42,9 @@ INTERVALLE_LECTURE_MS = 10_000
 DELAI_HTTP_MS = 12_000
 DELAI_CONNEXION_MS = 30_000
 FICHIER_CA = "ca.pem"
+
+# Suivi facultatif : copier les quatre lignes creees dans les details du boitier.
+DASHBOARD_ACTIF = False
+DASHBOARD_URL = "https://connected-warner.vercel.app"
+DASHBOARD_APPAREIL_ID = "aefc072a-e80d-4969-9589-52e925164de1"
+DASHBOARD_CLE = ""

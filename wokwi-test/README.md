@@ -242,10 +242,10 @@ de temps. Ils vérifient aussi le cycle d’aide, l’annulation dès le premier
 après des cris, le bip local sans Wi-Fi, le motif distinct après `OK` et l’absence
 de nouvelles demandes pendant l’attente ou les bips.
 
-Pour la suite complète de tests PC (258 tests au 16 octobre) :
+Pour la suite complète de tests PC (272 tests au 16 octobre, suivi web inclus) :
 
 ```powershell
-python -B -m unittest test_audio test_journal test_machine_etats test_reseau_simule test_pushbullet_reel test_config_wifi test_contacts test_wifi_et_voyants
+python -B -m unittest test_audio test_journal test_machine_etats test_reseau_simule test_pushbullet_reel test_config_wifi test_contacts test_wifi_et_voyants test_dashboard
 ```
 
 `test_entrees_sorties.py` reste un essai matériel MicroPython et est exclu de
@@ -269,3 +269,12 @@ Le programme actuel importe aussi `journal.py` : l’ajouter à Wokwi avec les
 autres modules. Ce journal local garde deux générations de 32 Kio et une dernière
 activité en mémoire RTC pour diagnostiquer les resets. Les détails et la commande
 d’export USB sont dans [carte/README.md](../carte/README.md#journal-des-incidents).
+
+## Suivi web facultatif
+
+`dashboard.py` ajoute la présence sur le site, activée seulement par
+`DASHBOARD_ACTIF = True` et les paramètres privés du boîtier. Voir le
+[guide carte](../carte/README.md#présence-sur-le-dashboard) pour le raccordement,
+les priorités, les délais et les essais matériels restants. Ajouter ce module
+au projet Wokwi uniquement si le suivi est activé ; les paramètres par défaut
+ne transmettent aucune présence. Le programme Pushbullet reste autonome.
