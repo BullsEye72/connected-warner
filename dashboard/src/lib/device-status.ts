@@ -69,6 +69,12 @@ export function displayDevice(device: Device, now: number): DisplayDevice {
     note: presence === "never" ? "Ce boîtier est enregistré. Aucun signal de présence n’a encore été reçu." :
       presence === "recent" ? "Les informations affichées correspondent au dernier signal reçu." :
       "Le dernier signal est ancien. L’état actuel du boîtier est inconnu.",
-    lastError: device.last_error,
+    lastError: device.last_error === "pushbullet_quota_mensuel"
+      ? "Quota mensuel Pushbullet atteint. Vérifiez le compte Pushbullet pour rétablir les envois."
+      : device.last_error,
   };
+}
+
+export function needsAttention(device: Pick<DisplayDevice, "presence" | "lastError">): boolean {
+  return device.presence !== "recent" || Boolean(device.lastError);
 }

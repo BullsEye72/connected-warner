@@ -36,6 +36,7 @@ qui n'ont pas encore été exécutés :
 1. [202610160001_dashboard.sql](supabase/migrations/202610160001_dashboard.sql)
 2. [202610160002_device_presence.sql](supabase/migrations/202610160002_device_presence.sql)
 3. [202610160003_single_household_access.sql](supabase/migrations/202610160003_single_household_access.sql)
+4. [202610180004_pushbullet_error.sql](supabase/migrations/202610180004_pushbullet_error.sql)
 
 Les tables sont :
 
@@ -159,7 +160,7 @@ npm run build
 ```
 
 Les tests utilisent PostgreSQL embarqué (PGlite), avec plusieurs comptes fictifs,
-pour appliquer les trois vraies migrations et vérifier le premier administrateur,
+pour appliquer les quatre vraies migrations et vérifier le premier administrateur,
 l'attente, l'approbation, la révocation, RLS, les privilèges de colonnes,
 l'absence d'accès anonyme et l'impossibilité de fabriquer la télémétrie.
 Ils ne touchent pas au projet Supabase distant ni à Google.
@@ -188,7 +189,8 @@ Les alertes directes Pushbullet gardent leur propre fonctionnement.
 Le signal utilise `POST /api/devices/<UUID>/heartbeat`, HTTPS et
 `Authorization: Bearer <clé>`. Le corps JSON est limité à 2 Kio et n'accepte que
 `session`, `sequence`, `state`, `uptime_seconds`, `firmware_version`,
-`micropython_version`, `wifi_rssi` et `request_id`. Il n'inclut aucun nom de
+`micropython_version`, `wifi_rssi`, `request_id` et le code facultatif
+`pushbullet_error` (`quota_mensuel` ou `null`). Il n'inclut aucun nom de
 contact, mot de passe Wi-Fi ou jeton Pushbullet.
 
 L'API appelle une RPC restreinte avec la clé publique Supabase. La RPC vérifie
@@ -205,7 +207,7 @@ authentifiée `set_device_key`. L'ancienne clé cesse immédiatement de fonction
 Le compteur affiché correspond aux redémarrages observés depuis le raccordement,
 pas au total de redémarrages physiques de la carte depuis sa fabrication.
 
-Les 24 tests du dashboard appliquent les migrations à PostgreSQL embarqué et
+Les 27 tests du dashboard appliquent les migrations à PostgreSQL embarqué et
 vérifient les accès au logement partagé, la rotation des clés, l'ordre, les doublons,
 la validation et les événements. Un parcours HTTP local vérifie aussi la connexion,
 l'attente, l'approbation, la consultation sans administration, la révocation et
@@ -218,3 +220,36 @@ seuils de 15 et 30 minutes restent provisoires, comme dans la spécification.
 Une présence ne prouve pas le fonctionnement du bouton, du voyant ou de Pushbullet.
 Le suivi reste indépendant des alertes directes Pushbullet. Ne jamais transmettre
 le jeton Pushbullet ni le mot de passe Wi-Fi au dashboard.
+
+## Quota Pushbullet signalé par la carte (18 octobre)
+
+La version préparée affiche « Quota mensuel Pushbullet atteint » sur la fiche
+du boîtier, sans ouvrir ses détails. Le boîtier entre aussi dans « À vérifier »,
+même si sa présence est récente. Son état d’aide reste indépendant : une demande
+confirmée demeure confirmée lorsque l’accusé échoue pour quota atteint.
+
+La carte transmet seulement le code fixe `quota_mensuel` après un refus explicite
+de Pushbullet, jamais le texte de la réponse ni un secret. Le signal part au
+prochain créneau de transmission disponible, sans attendre les dix minutes de
+présence périodique. Un envoi Pushbullet réellement accepté permet de transmettre
+`null` pour lever l’alerte. Une lecture de compte réussie, un redémarrage ou un
+ancien firmware sans ce champ ne l’effacent pas. Une nouvelle erreur est
+historisée une fois ; les rapports répétés ne dupliquent pas l’événement.
+
+Mise en service, dans cet ordre :
+
+1. Appliquer **202610180004_pushbullet_error.sql** dans le SQL Editor Supabase,
+   après les trois migrations précédentes. Elle réutilise `devices.last_error`
+   et conserve les appareils, clés, comptes et événements existants.
+2. Redéployer le dashboard Vercel avec cette version du code. Aucune variable
+   supplémentaire ni nouvelle clé n’est nécessaire.
+3. Exécuter `python carte/preparer.py`, transférer `.deploy/` puis redémarrer la
+   carte. L’ancienne API refuse ce nouveau champ : le serveur doit être prêt
+   avant le transfert de cette version embarquée.
+
+Validation locale : 285 tests MicroPython sur PC, 27 tests du dashboard, contrôle
+TypeScript et build de production réussis. Les tests SQL couvrent l’erreur,
+l’absence de doublons, la conservation après reboot, l’effacement explicite et
+le refus des codes arbitraires. L’utilisateur confirme l’application de la
+migration distante le 18 octobre ; la publication du site précède le transfert
+de la version embarquée compatible.

@@ -4,7 +4,7 @@ import { SubmitButton } from "./submit-button";
 import { Refresh } from "./refresh";
 import { DeviceKey } from "./device-key";
 import { signOut } from "@/app/auth/actions";
-import type { DisplayDevice } from "@/lib/device-status";
+import { needsAttention, type DisplayDevice } from "@/lib/device-status";
 
 export function DashboardView({ householdName, devices, email, demo = false, canManage = false, children }: {
   householdName: string;
@@ -16,7 +16,7 @@ export function DashboardView({ householdName, devices, email, demo = false, can
 }) {
   const count = (value: number) => String(value).padStart(2, "0");
   const recent = devices.filter(device => device.presence === "recent").length;
-  const attention = devices.length - recent;
+  const attention = devices.filter(needsAttention).length;
   return (
     <div className="shell">
       {!demo && <Refresh />}
@@ -39,7 +39,7 @@ export function DashboardView({ householdName, devices, email, demo = false, can
           <section className="metrics" aria-label={demo ? "Résumé de démonstration" : "Résumé des boîtiers"}>
             <article className="metric"><span>Boîtiers enregistrés</span><div>{count(devices.length)} <span className="metric-symbol">▣</span></div><small>{demo ? "Dans ce logement de démonstration" : "Dans votre logement"}</small></article>
             <article className="metric"><span>Présence récente</span><div>{count(recent)} <span className="metric-symbol green-text">●</span></div><small>Un signal reçu depuis moins de 15 min</small></article>
-            <article className="metric"><span>À vérifier</span><div>{count(attention)} <span className="metric-symbol amber-text">◷</span></div><small>Signal en retard, absent ou jamais reçu</small></article>
+            <article className="metric"><span>À vérifier</span><div>{count(attention)} <span className="metric-symbol amber-text">◷</span></div><small>Présence à vérifier ou erreur signalée</small></article>
           </section>
           <section id="boitiers" className="devices-section" aria-labelledby="devices-title">
             <div className="section-heading"><h2 id="devices-title">Vos boîtiers <span>{count(devices.length)}</span></h2><span>Signaux de présence prévus toutes les 10 min</span></div>
@@ -49,8 +49,9 @@ export function DashboardView({ householdName, devices, email, demo = false, can
                 <div className="device-top"><span className="device-icon" aria-hidden="true">▣</span><span className={`status ${device.tone}`}><span className="dot" />{device.presenceLabel}</span></div>
                 <h3>{device.name}</h3><p className="device-place">{device.location} <span>·</span> <span title={device.id}>{device.id.slice(0, 8)}</span></p>
                 <div className="device-state" data-state={device.stateKind}><span>Dernier état connu</span><strong><span className="state-dot" aria-hidden="true" />{device.state}</strong></div>
+                {device.lastError && <div className="device-warning" role="status"><strong>Erreur de notification signalée</strong><p>{device.lastError}</p></div>}
                 <dl className="device-info"><div><dt>Dernière présence</dt><dd>{device.seenDate ? <time dateTime={device.seenDate}>{device.lastSeen}</time> : device.lastSeen}</dd></div><div><dt>Signal Wi-Fi reçu</dt><dd>{device.wifi}</dd></div></dl>
-                <details><summary>Détails du boîtier <span aria-hidden="true">＋</span></summary><dl className="detail-info"><div><dt>Identifiant</dt><dd className="device-id">{device.id}</dd></div><div><dt>Version du programme</dt><dd>{device.version}</dd></div><div><dt>MicroPython</dt><dd>{device.micropython}</dd></div><div><dt>Durée de fonctionnement reçue</dt><dd>{device.uptime}</dd></div><div><dt>Redémarrages observés par le site</dt><dd>{device.reboots}</dd></div></dl><p>{device.note}</p>{device.lastError && <p className="form-error">Dernière erreur reçue : {device.lastError}</p>}{!demo && canManage && <DeviceKey id={device.id} />}</details>
+                <details><summary>Détails du boîtier <span aria-hidden="true">＋</span></summary><dl className="detail-info"><div><dt>Identifiant</dt><dd className="device-id">{device.id}</dd></div><div><dt>Version du programme</dt><dd>{device.version}</dd></div><div><dt>MicroPython</dt><dd>{device.micropython}</dd></div><div><dt>Durée de fonctionnement reçue</dt><dd>{device.uptime}</dd></div><div><dt>Redémarrages observés par le site</dt><dd>{device.reboots}</dd></div></dl><p>{device.note}</p>{!demo && canManage && <DeviceKey id={device.id} />}</details>
               </article>
             ))}</div>
             {children}

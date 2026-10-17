@@ -44,6 +44,7 @@ before(async () => {
   await db.query("insert into public.households(id,owner_id,name) values ($1,$2,'Home')", [device, alice]);
   await db.query("insert into public.devices(id,household_id,name) values ($1,$1,'Device')", [device]);
   await db.exec(await readFile(new URL("../supabase/migrations/202610160003_single_household_access.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/202610180004_pushbullet_error.sql", import.meta.url), "utf8"));
 });
 after(async () => { await db.close(); });
 
@@ -128,4 +129,39 @@ test("request parser bounds streamed bodies even without Content-Length", async 
   assert.deepEqual(await readReport(request(JSON.stringify(report))), report);
   await assert.rejects(readReport(request("x".repeat(2049))), /too_large/);
   await assert.rejects(readReport(request("{invalid")), SyntaxError);
+});
+
+test("quota is retained across reports and reboots, cleared explicitly, and not duplicated in history", async () => {
+  const warning = { ...report, session: "c".repeat(24), state: "confirmee", pushbullet_error: "quota_mensuel" };
+  await ageReceipt();
+  assert.equal(await ingest(warning, other), "accepted");
+  await asUser(alice);
+  const value = (await db.query<{ last_error: string; request_state: string }>("select last_error,request_state from public.devices")).rows[0];
+  assert.equal(value.last_error, "pushbullet_quota_mensuel");
+  assert.equal(value.request_state, "confirmee");
+  assert.equal(await ingest(warning, other), "obsolete");
+  await ageReceipt();
+  assert.equal(await ingest({ ...warning, sequence: 2 }, other), "accepted");
+  await asUser(alice);
+  assert.equal((await db.query<{ count: number }>("select count(*)::int as count from public.device_events where event_type='erreur'")).rows[0].count, 1);
+  for (const r of [{ ...report, session: "c".repeat(24), sequence: 3 }, { ...report, session: "d".repeat(24) }]) {
+    await ageReceipt();
+    assert.equal(await ingest(r, other), "accepted");
+    await asUser(alice);
+    assert.equal((await db.query<{ last_error: string }>("select last_error from public.devices")).rows[0].last_error, "pushbullet_quota_mensuel");
+  }
+  await ageReceipt();
+  assert.equal(await ingest({ ...report, session: "d".repeat(24), sequence: 2, pushbullet_error: null }, other), "accepted");
+  await asUser(alice);
+  assert.equal((await db.query<{ last_error: string | null }>("select last_error from public.devices")).rows[0].last_error, null);
+});
+
+test("only the fixed quota code is accepted by both API and direct RPC", async () => {
+  assert.equal(validReport({ ...report, pushbullet_error: "quota_mensuel" }), true);
+  assert.equal(validReport({ ...report, pushbullet_error: null }), true);
+  for (const pushbullet_error of ["secret@example.test", "", false, 1, [], {}, ["quota_mensuel"]]) {
+    const r = { ...report, pushbullet_error };
+    assert.equal(validReport(r), false);
+    assert.equal(await ingest(r, other), "invalid");
+  }
 });

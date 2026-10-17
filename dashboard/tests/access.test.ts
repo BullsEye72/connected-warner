@@ -43,6 +43,7 @@ before(async () => {
   await db.exec("reset role;");
   await db.query("insert into public.device_events(device_id,event_type) values ($1,'demarrage')", [device]);
   await db.exec(await migration(sharedMigration));
+  await db.exec(await migration("202610180004_pushbullet_error.sql"));
 });
 after(async () => { await db.close(); });
 
@@ -137,6 +138,7 @@ test("administrator still manages labels and keys but cannot fabricate telemetry
   await db.query("update public.devices set name='Lit principal' where id=$1", [device]);
   await db.query("select public.set_device_key($1,$2)", [device, "b".repeat(64)]);
   await assert.rejects(db.query("update public.devices set last_seen_at=now()"), /permission denied/);
+  await assert.rejects(db.query("update public.devices set last_error='forged'"), /permission denied/);
   await assert.rejects(db.query("insert into public.device_events(device_id,event_type) values ($1,'confirmation')", [device]), /permission denied/);
   await assert.rejects(db.query("update public.households set owner_id=$1", [bob]), /permission denied/);
 });
